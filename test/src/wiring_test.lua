@@ -1402,6 +1402,73 @@ local function define_tests()
         end)
     end)
 
+    test.describe("butschster.tui_desktop цена кадра временем", function()
+        -- «Тормозит» без цифр не чинится: сначала мерить. Байты и строки
+        -- говорят, сколько ушло в терминал, но не где прошло время, и спор
+        -- «пересборка в Lua или present» решался бы на глаз.
+        test.it("статус несёт время кадра, его причину и сводку по последним кадрам", function()
+            local service = "butschster.tui_desktop.test.frame_time"
+            local box = mailbox(process.inbox())
+            local desk = boot_composer(service)
+
+            -- Первый кадр рисуется до того, как цикл берёт команды: к ответу
+            -- на первый вопрос он уже есть.
+            local first: any = ask_desktop(service, box, "desktop.list", {})
+            test.not_nil(first.frame, "композитор обязан отдавать цену кадра")
+            local frame: any = first.frame or {}
+            test.eq(type(frame.paint_ms), "number", "paint_ms обязан быть числом")
+            test.eq(type(frame.present_ms), "number", "present_ms обязан быть числом")
+            test.is_true((tonumber(frame.paint_ms) or -1) >= 0
+                and (tonumber(frame.present_ms) or -1) >= 0, "время кадра не бывает отрицательным")
+            test.is_true((tonumber(frame.total_ms) or -1) >= (tonumber(frame.paint_ms) or 0),
+                "total_ms обязан включать paint_ms")
+            test.eq(frame.trigger, "start", "первый кадр называет причиной старт")
+
+            -- Причина следующего кадра — команда, перерисовавшая стол. Без
+            -- имени причины сводка говорила бы «max 40 мс» и не говорила бы,
+            -- от чего.
+            local opened = ask_desktop(service, box, "desktop.open",
+                {entry = "app:idle_window", title = "Мера", x = 2, y = 3, w = 30, h = 8})
+            test.is_true(opened.ok == true, "окно не открылось: " .. tostring(opened.error))
+
+            local after: any = ask_desktop(service, box, "desktop.list", {})
+            local window: any = after.frame and after.frame.window or {}
+            test.is_true((math.tointeger(window.frames) or 0) >= 2,
+                "в сводке обязаны быть оба кадра: старт и открытие")
+            test.eq(math.tointeger(window.frames), math.tointeger(after.frame.frames_total),
+                "пока кадров меньше окна сводки, она видит их все")
+            local triggers: any = window.triggers or {}
+            test.eq(math.tointeger(triggers.start), 1, "старт в сводке ровно один")
+            test.is_true((math.tointeger(triggers.command) or 0) >= 1,
+                "кадр от команды обязан называть себя командой")
+            test.is_true(triggers.unknown == nil, "ни одна ветка цикла не осталась безымянной")
+            for _, part in ipairs({"paint", "present", "total"}) do
+                local stats: any = window[part] or {}
+                test.eq(type(stats.p95_ms), "number", part .. ".p95_ms обязан быть числом")
+                test.is_true((tonumber(stats.max_ms) or -1) >= (tonumber(stats.avg_ms) or 0),
+                    part .. ": максимум не меньше среднего")
+                test.eq(type(stats.max_trigger), "string", part .. ".max_trigger называет причину")
+            end
+
+            -- Сырые кадры — только по просьбе, и по одному на каждый кадр:
+            -- замер по фазам склеивает их по seq, дыра читалась бы как
+            -- «кадра не было».
+            test.is_nil(after.frame.samples, "без просьбы сырые кадры в статус не едут")
+            local raw: any = ask_desktop(service, box, "desktop.list", {frame_samples = true})
+            local samples: any = raw.frame and raw.frame.samples or {}
+            test.eq(#samples, math.tointeger(raw.frame.frames_total),
+                "пока кадров меньше кольца, сырых кадров столько же, сколько нарисовано")
+            for index, sample in ipairs(samples) do
+                test.eq(math.tointeger(sample.seq), index, "seq идёт подряд от старого к новому")
+                test.eq(type(sample.paint_ms), "number", "у сырого кадра есть paint_ms")
+                test.eq(type(sample.at_ms), "number", "у сырого кадра есть момент")
+            end
+            test.eq(samples[1] and samples[1].trigger, "start", "первый сырой кадр — старт")
+
+            process.terminate(tostring(desk.pid))
+        end)
+    end)
+
     test.describe("butschster.tui_desktop права под объявленные модули", function()
         test.it("на каждый модуль, закрытый правами, право выдано", function()
             -- Этот класс стоил здесь трёх часов и выглядел как четыре разные

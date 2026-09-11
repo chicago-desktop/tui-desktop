@@ -18,7 +18,10 @@ local function handler()
         return
     end
 
-    local answer, err = control.call("desktop.list", {})
+    -- ?frame_samples=1 — сырые кадры кольца замера (до двухсот строк): нужны
+    -- замеру по фазам, в обычном статусе только лишний вес.
+    local samples_wanted = req:query("frame_samples") == "1"
+    local answer, err = control.call("desktop.list", {frame_samples = samples_wanted})
     if not answer then
         res:set_status(http.STATUS.SERVICE_UNAVAILABLE)
         res:write_json({success = false, error = err})

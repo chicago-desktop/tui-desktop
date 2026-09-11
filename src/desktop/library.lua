@@ -89,6 +89,10 @@ local CLOSE_GRACE = "3s"
 -- Без этого тика кадр обновляется только на событии, и время на экране
 -- останавливается — вид «оболочка зависла» при исправной оболочке.
 local CLOCK_TICK = "15s"
+-- Сколько последних кадров помнит замер времени (`frame.window` в статусе).
+-- Двести — несколько секунд под потоком вывода и минуты в покое: хватает на
+-- p95, не хватает, чтобы старый всплеск висел в сводке вечно.
+local FRAME_WINDOW = 200
 
 -- Задержка, с которой наведение в меню раскрывает папку или закрывает
 -- подменю. Как в Windows: без неё мышь, идущая от папки к её подменю по
@@ -451,6 +455,13 @@ local function run(options: any)
     -- ПРАВИЛЬНЫЙ экран, просто медленный, а у медленного нет ни стека, ни
     -- симптома — по ssh его не найти глазами.
     local frame_cost: any = {}
+    -- Сколько кадр стоил ВРЕМЕНЕМ и что его разбудил. Байты и строки выше
+    -- говорят, сколько ушло в терминал, но не где прошло время: в пересборке
+    -- канвы темой или в `present`. `trigger` пишет цикл, читает `draw`;
+    -- `samples` — кольцо последних FRAME_WINDOW кадров для avg/p95/max.
+    -- Таблицей, а не локальными: выше по кадру стоит pcall входа, а после
+    -- ошибки под pcall простая локальная у цикла и у замыкания расходится.
+    local meter: any = {trigger = "start", snapshot_ms = nil, total = 0, next = 1, samples = {}}
     local menu_hits: any = {}
     -- Таймер наведения в меню: есть только пока каскад ждёт своей смены,
     -- см. `hover_menu`. Объявлен здесь, потому что цикл кладёт его в select.
@@ -680,7 +691,85 @@ local function run(options: any)
         canvas:put_rows(x, y, rows :: {string}, span)
     end
 
+    local function round_ms(value)
+        return math.floor(value * 1000 + 0.5) / 1000
+    end
+
+    local function record_frame(cost: any, at)
+        meter.total = meter.total + 1
+        meter.samples[meter.next] = {
+            paint = cost.paint_ms, present = cost.present_ms, total = cost.total_ms,
+            bytes = tonumber(cost.bytes_written) or 0, trigger = cost.trigger, at = at,
+            seq = meter.total,
+        }
+        meter.next = meter.next % FRAME_WINDOW + 1
+    end
+
+    -- Цена кадров для статуса: последний кадр как был, плюс сводка по кольцу.
+    -- Перцентиль считается здесь, по запросу: кадров под потоком вывода —
+    -- десятки в секунду, а статус спрашивают раз в несколько секунд.
+    local function frame_report(with_samples)
+        local report: any = {}
+        for key, value in pairs(frame_cost) do report[key] = value end
+        report.frames_total = meter.total
+        local samples: any = meter.samples
+        local count = #samples
+        if with_samples then
+            -- Сырые кадры, от старого к новому. Замер по фазам склеивает их по
+            -- `seq` из соседних снимков: сводка кольца на конце короткой фазы
+            -- смешала бы её с кадрами предыдущей.
+            local raw = {}
+            for offset = 0, count - 1 do
+                local sample = samples[(meter.next - 1 + offset) % count + 1]
+                raw[#raw + 1] = {
+                    seq = sample.seq, at_ms = math.floor(sample.at / 1000000),
+                    paint_ms = sample.paint, present_ms = sample.present,
+                    total_ms = sample.total, bytes = sample.bytes, trigger = sample.trigger,
+                }
+            end
+            report.samples = raw
+        end
+        if count == 0 then return report end
+
+        local function part(field)
+            local values = {}
+            local sum, max, max_trigger = 0, -1, nil
+            for _, sample in ipairs(samples) do
+                local value = tonumber(sample[field]) or 0
+                values[#values + 1] = value
+                sum = sum + value
+                if value > max then max, max_trigger = value, sample.trigger end
+            end
+            table.sort(values)
+            local rank = math.tointeger(math.max(1, math.ceil(#values * 0.95))) or 1
+            return {avg_ms = round_ms(sum / #values), p95_ms = round_ms(values[rank]),
+                max_ms = round_ms(max), max_trigger = max_trigger}
+        end
+
+        local oldest, newest = nil, nil
+        local bytes_sum, bytes_max = 0, 0
+        local triggers: any = {}
+        for _, sample in ipairs(samples) do
+            if oldest == nil or sample.at < oldest then oldest = sample.at end
+            if newest == nil or sample.at > newest then newest = sample.at end
+            bytes_sum = bytes_sum + sample.bytes
+            if sample.bytes > bytes_max then bytes_max = sample.bytes end
+            -- По виду, без окна: «pty:w3» и «pty:w4» — один вопрос.
+            local kind = tostring(sample.trigger):match("^[^:]+") or "?"
+            triggers[kind] = (triggers[kind] or 0) + 1
+        end
+        report.window = {
+            frames = count,
+            span_s = round_ms(((newest or 0) - (oldest or 0)) / 1000000000),
+            paint = part("paint"), present = part("present"), total = part("total"),
+            bytes_avg = math.floor(bytes_sum / count + 0.5), bytes_max = bytes_max,
+            triggers = triggers,
+        }
+        return report
+    end
+
     local function draw()
+        local started = time.now():unix_nano()
         canvas:clear(" ")
 
         local top = focused()
@@ -817,7 +906,9 @@ local function run(options: any)
             }
         end
 
+        local painted_at = time.now():unix_nano()
         local stats = assert(out:present(canvas:rows(), {cursor = cursor, images = images}))
+        local presented_at = time.now():unix_nano()
         frame_cost = {
             changed_rows = stats.changed_rows,
             bytes_written = stats.bytes_written,
@@ -826,7 +917,16 @@ local function run(options: any)
             -- пустым — и «не измеряли» не притворится нулём.
             placements_sent = stats.placements_sent,
             images = images and #images or 0,
+            -- paint — канва и тема (fill/window/bars/menu или paint+frame),
+            -- present — диффер поверхности и кодирование растров.
+            paint_ms = round_ms((painted_at - started) / 1000000),
+            present_ms = round_ms((presented_at - painted_at) / 1000000),
+            total_ms = round_ms((presented_at - started) / 1000000),
+            trigger = meter.trigger,
+            -- Только у кадра окна: снимок его viewport до `draw`.
+            snapshot_ms = meter.snapshot_ms,
         }
+        record_frame(frame_cost, presented_at)
     end
 
     -- open_window(spec, from) — `from` это отправитель команды. Если он
@@ -2015,7 +2115,9 @@ local function run(options: any)
                 -- Цена последнего кадра: изменившиеся строки, отправленные
                 -- растры, байты. Мера для §8 FR-005 и единственный способ
                 -- заметить, что хром порезан неверно.
-                frame = frame_cost,
+                -- Плюс время: paint_ms/present_ms последнего кадра, его
+                -- причина и сводка avg/p95/max по последним FRAME_WINDOW.
+                frame = frame_report(body.frame_samples == true),
                 pixels = PIXELS,
                 restore = restore_report}, to, topic)
             return false
@@ -2192,16 +2294,21 @@ local function run(options: any)
 
         local selected = channel.select(cases)
         if not selected.ok then break end
+        -- Причина кадра: каждая ветка ниже называет себя, `draw` её пишет в
+        -- цену. «unknown» в статусе — ветка, которую забыли назвать.
+        meter.trigger, meter.snapshot_ms = "unknown", nil
 
         -- Тик часов не событие окна: он ничего не пересылает, только
         -- обновляет кадр, если минута сменилась.
         local handled = false
         if selected.channel == ticker then
+            meter.trigger = "tick"
             ticker = time.after(CLOCK_TICK)
             if tick_clock() then draw() end
             handled = true
         end
         if hover_timer ~= nil and selected.channel == hover_timer then
+            meter.trigger = "hover"
             settle_hover()
             handled = true
         end
@@ -2210,7 +2317,10 @@ local function run(options: any)
         -- всегда берётся снимком.
         for _, window in ipairs(watched) do
             if selected.channel == window.updates then
+                meter.trigger = "pty:" .. tostring(window.id)
+                local asked = time.now():unix_nano()
                 local snapshot = window.view:snapshot(window.revision)
+                meter.snapshot_ms = round_ms((time.now():unix_nano() - asked) / 1000000)
                 if snapshot then
                     window.rows = snapshot.rows
                     window.cursor = snapshot.cursor
@@ -2222,6 +2332,7 @@ local function run(options: any)
                 break
             end
             if window.deadline and selected.channel == window.deadline then
+                meter.trigger = "deadline"
                 process.terminate(tostring(window.state_pid or window.pid))
                 window.deadline = nil
                 handled = true
@@ -2233,6 +2344,7 @@ local function run(options: any)
             if selected.channel == inbox then
                 local message = selected.value
                 if message then
+                    meter.trigger = "command:" .. tostring(message:topic())
                     local body = unwrap(message:payload())
                     -- Отправитель нужен, чтобы связать диалог с его окном:
                     -- в теле такой связи верить нельзя.
@@ -2240,6 +2352,7 @@ local function run(options: any)
                 end
             elseif selected.channel == lifecycle then
                 local event = selected.value
+                meter.trigger = "exit"
                 if event.kind == process.event.EXIT then
                     local gone = tostring(event.from)
                     for index = #windows, 1, -1 do
@@ -2269,6 +2382,8 @@ local function run(options: any)
                 end
             else
                 local event = selected.value
+                -- resize / mouse / key / paste…: вид события и есть причина.
+                meter.trigger = tostring(event.type)
                 if event.type == "resize" then
                     -- Font zoom changes pixels per cell independently of the
                     -- grid. Refresh the theme before its layout/insets, then
