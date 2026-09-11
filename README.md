@@ -145,6 +145,7 @@ override:
 
 - `POST /tui-desktop/apps` — собрать окно: `name`, `source`, `title`, `width`, `height`, `modules`, `group` (папка меню, как `meta.group` у записи из файла; пусто — папку выбирает оболочка). Сверх кода — те же поля, что у записи из файла: `imports` (`{имя = id библиотеки}`, имя `desktop` занято), `pixel_render` (библиотека пиксельного вида; `pixel_state` — само окно), `image`, `icon`, `window_type` (`app | dialog | tool`), `resizable`, `in_menu`, `order`. Так в мастерской собирается окно на SDK оболочки: `imports = {app = "butschster.windows.sdk:app"}`, `pixel_render = "butschster.windows.sdk:render"`. Мёртвый импорт и не-библиотека отклоняются по имени поля
 - `GET /tui-desktop/apps` — сохранённые окна и признак `live` (есть ли запись в реестре сейчас)
+- команда `desktop.tray` `{key, text, entry?, title?, ttl?}` командного канала — пункт области уведомлений у часов; тот же `key` обновляет, `{key, remove: true}` снимает. Не больше 6 пунктов и 16 знаков в подписи. Пункт, не обновлённый за `ttl` секунд, композитор снимает сам. Щелчок по пункту открывает `entry` или поднимает уже открытое окно — как щелчок по часам. Из Lua — `window_api.tray(spec, service?)`; `desktop.list` отдаёт `tray` с владельцем и остатком срока
 - команда `desktop.workshop` `{name, remove?}` командного канала — применить сохранённое окно в реестр (или снять) силами композитора: так окно собирает туз MCP, чей скоуп запрещает `registry.apply`
 - `DELETE /tui-desktop/apps/{name}` — убрать окно из хранилища и реестра
 
@@ -562,7 +563,9 @@ end
 - Функция: `icon_grid()`; Обязана: сетка значков стола: `{w, h, left}` — шаг вправо, шаг вниз, левый край первой колонки
 - Функция: `paint(state, cell_w, cell_h)`; Обязана: **только для пиксельного режима**: вернуть размещения растров и разметку попаданий. Тема, у которой её нет, в этот режим не пускается — см. «Пиксельный хром»
 
-`state` у `bars` — `{windows, focused_id, menu_open, status, clock}`;
+`state` у `bars` — `{windows, focused_id, menu_open, status, clock, tray}`;
+`tray` — список `{key, text, entry, title}` в порядке появления; попадание по
+пункту тема отдаёт как у часов — `{row, from, to, entry}`;
 у `fill` — `{top, bottom, items, failure, selected}`; у `paint` — объединение
 всего этого, разобранное в «Пиксельном хроме».
 

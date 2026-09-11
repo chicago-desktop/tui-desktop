@@ -28,21 +28,21 @@ end
 -- `cols`, `rows`. Растр НЕ обязателен: размещение без него означает «эта
 -- картинка уже на экране, оставь как есть» — на этом стоит вся экономия.
 function pixels.check(placement: any)
-    if type(placement) ~= "table" then return nil, "размещение не таблица" end
+    if type(placement) ~= "table" then return nil, "a placement is not a table" end
 
     local id = placement.id
     if type(id) ~= "string" or id == "" then
-        return nil, "у размещения нет id"
+        return nil, "a placement has no id"
     end
 
     local x, y = whole(placement.x), whole(placement.y)
     if not x or not y or x < 1 or y < 1 then
-        return nil, "размещение " .. id .. ": x и y считаются в ячейках и начинаются с единицы"
+        return nil, "placement " .. id .. ": x and y are counted in cells and start at one"
     end
 
     local cols, rows = whole(placement.cols), whole(placement.rows)
     if not cols or not rows or cols < 1 or rows < 1 then
-        return nil, "размещение " .. id .. ": cols и rows обязаны быть положительными"
+        return nil, "placement " .. id .. ": cols and rows must be positive"
     end
 
     return {id = id, x = x, y = y, cols = cols, rows = rows, raster = placement.raster}, nil
@@ -78,7 +78,7 @@ function pixels.hits(painted: any)
     end
     if given[1] ~= nil then
         return {desktop = {}, bars = {}, menu = {}},
-            "тема вернула плоский список попаданий; ожидались группы {desktop, bars, menu}"
+            "the theme returned a flat list of hits; groups {desktop, bars, menu} were expected"
     end
     return {
         desktop = type(given.desktop) == "table" and given.desktop or {},
@@ -98,7 +98,7 @@ function pixels.frame(canvas: any, painted: any)
 
     if type(list) ~= "table" then
         if painted ~= nil then
-            complaints[#complaints + 1] = "тема не вернула списка размещений"
+            complaints[#complaints + 1] = "the theme returned no placement list"
         end
         return images, complaints
     end
@@ -110,7 +110,7 @@ function pixels.frame(canvas: any, painted: any)
         elseif seen[placement.id] then
             -- Два размещения с одним id — это не два рисунка, а спор о том,
             -- какой из них показать; на экране он выглядит миганием.
-            complaints[#complaints + 1] = "размещение " .. placement.id .. " названо дважды"
+            complaints[#complaints + 1] = "placement " .. placement.id .. " is named twice"
         else
             seen[placement.id] = true
             pixels.blank_under(canvas, placement)

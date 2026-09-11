@@ -66,28 +66,32 @@ end
 -- окно обращалось к несуществующему процессу, а `api.open` ответа не ждёт,
 -- так что «успех» выглядел неотличимо от настоящего открытия.
 local function unreachable(name, source, lerr)
-    local reason = "десктоп «" .. name .. "» не отвечает (" .. tostring(lerr) .. ")"
+    local reason = "desktop \"" .. name .. "\" does not answer (" .. tostring(lerr) .. ")"
     if source ~= "default" then return reason end
     if has_ctx then
-        return reason .. "; имя композитора не пришло при запуске — в контексте нет ключа "
-            .. CONTEXT_KEY .. ", поэтому взято запасное"
+        return reason .. "; the compositor's name did not arrive at start — the context has no key "
+            .. CONTEXT_KEY .. ", so the fallback was taken"
     end
-    return reason .. "; имя композитора прочитать нечем — модуль ctx недоступен, "
-        .. "поэтому взято запасное"
+    return reason .. "; there is nothing to read the compositor's name with — the ctx module is unavailable, "
+        .. "so the fallback was taken"
 end
 
-local function call(topic, body)
+-- `service` — имя композитора, названное вызывающим. Нужно тому, у кого нет
+-- контекста окна: сервис приложения, кладущий пункт в трей, композитором не
+-- запускался и ключа в контексте не получил.
+local function call(topic, body, service: string?)
     local name, source = api.service()
+    if type(service) == "string" and service ~= "" then name, source = service, "argument" end
     local pid, lerr = process.registry.lookup(name)
     if not pid then
         local reason = unreachable(name, source, lerr)
-        log:error("окно не нашло свой десктоп",
+        log:error("the window did not find its desktop",
             {service = name, source = source, topic = topic, error = reason})
         return nil, reason
     end
     local sent, serr = process.send(pid, topic, body or {})
     if not sent then
-        return nil, "команда не дошла до «" .. name .. "»: " .. tostring(serr)
+        return nil, "the command did not reach \"" .. name .. "\": " .. tostring(serr)
     end
     return true, nil
 end
@@ -122,7 +126,7 @@ local function reply_channel()
     -- Подписка создаётся ДО отправки вопроса: созданная после, она пропустила
     -- бы быстрый ответ в inbox, где его съел бы чужой цикл.
     local opened = process.listen(api.REPLY_TOPIC, {message = true})
-    if not opened then return nil, "окно не смогло подписаться на ответы десктопа" end
+    if not opened then return nil, "the window could not subscribe to the desktop's replies" end
     replies = opened
     return replies, nil
 end
@@ -161,7 +165,7 @@ function api.request(topic, body)
     local pid, lerr = process.registry.lookup(name)
     if not pid then
         local reason = unreachable(name, source, lerr)
-        log:error("окно не нашло свой десктоп",
+        log:error("the window did not find its desktop",
             {service = name, source = source, topic = topic, error = reason})
         return nil, reason
     end
@@ -174,7 +178,7 @@ function api.request(topic, body)
 
     local sent, serr = process.send(pid, topic, body)
     if not sent then
-        return nil, "вопрос не дошёл до «" .. name .. "»: " .. tostring(serr)
+        return nil, "the question did not reach \"" .. name .. "\": " .. tostring(serr)
     end
     return true, nil
 end
@@ -192,7 +196,7 @@ function api.ask(topic, body, opts)
 
     local stale = drop_stale(ch)
     if stale > 0 then
-        log:warn("выброшен ответ, которого уже никто не ждал",
+        log:warn("dropped a reply nobody was waiting for",
             {topic = topic, dropped = stale})
     end
 
@@ -204,10 +208,10 @@ function api.ask(topic, body, opts)
         local picked = channel.select({ch:case_receive(), expiry:case_receive()})
         if picked.channel == expiry then
             local name = api.service()
-            return nil, "десктоп «" .. name .. "» не ответил за " .. budget
+            return nil, "desktop \"" .. name .. "\" did not answer within " .. budget
         end
         if not picked.ok then
-            return nil, "канал ответов закрылся, пока ждали десктоп"
+            return nil, "the reply channel closed while waiting for the desktop"
         end
 
         local answer = unwrap(picked.value:payload())
@@ -216,13 +220,13 @@ function api.ask(topic, body, opts)
             -- ответом на ЭТОТ вопрос не является. Принять его за ответ значит
             -- соврать про другую команду — поэтому он только называется в
             -- логе, а ожидание продолжается.
-            log:warn("десктоп отказал в команде, посланной без ожидания",
+            log:warn("the desktop refused a command sent without waiting",
                 {command = tostring(answer.command), error = tostring(answer.error)})
         elseif type(answer.command) == "string" and answer.command ~= topic then
-            log:warn("ответ не на этот вопрос",
+            log:warn("a reply to a different question",
                 {asked = tostring(topic), answered = tostring(answer.command)})
         elseif answer.ok == false then
-            return nil, tostring(answer.error or "десктоп отказал без причины")
+            return nil, tostring(answer.error or "the desktop refused without a reason")
         else
             return answer, nil
         end
@@ -288,6 +292,22 @@ end
 function api.publish_state(id, state: any)
     local ok, err = call("desktop.state", {id = id, state = state,
         title = type(state) == "table" and state.title or nil})
+    return ok, err
+end
+
+-- tray{key=…, text=…, entry=…, title=…, ttl=…} [, service]
+-- tray{key=…, remove=true} [, service]
+--
+-- Пункт области уведомлений у часов панели задач. Ключ выбирает поставщик:
+-- тот же ключ обновляет пункт. `entry` — окно, которое откроет щелчок по
+-- пункту (или поднимет уже открытое). `ttl` в секундах: пункт, который не
+-- обновили за этот срок, композитор снимает сам — подпись, пережившая своего
+-- поставщика, выдавала бы старое значение за нынешнее.
+--
+-- Ответа не ждёт, как `open`: отказ (нет ключа, трей полон) приезжает сам в
+-- `api.replies()` с пометкой `unsolicited`, а без канала — в inbox.
+function api.tray(spec, service: string?)
+    local ok, err = call("desktop.tray", type(spec) == "table" and spec or {}, service)
     return ok, err
 end
 

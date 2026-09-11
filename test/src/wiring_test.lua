@@ -682,6 +682,80 @@ local function define_tests()
         end)
     end)
 
+    test.describe("butschster.tui_desktop область уведомлений", function()
+        -- Трей проверяется командным каналом, как его и зовут поставщики:
+        -- сервис приложения шлёт `desktop.tray`, а `desktop.list` — то место,
+        -- где «пункт не принят» отличается от «принят, но не нарисован».
+        test.it("кладёт, обновляет, снимает и сам убирает протухшие пункты, называя каждый отказ", function()
+            local service = "butschster.tui_desktop.test.tray"
+            local box = mailbox(process.inbox())
+            local desk = boot_composer(service)
+
+            local put = ask_desktop(service, box, "desktop.tray",
+                {key = "weather", text = "+17°", entry = "app:idle_window", ttl = 60,
+                 image = "weather_sun", icon = "☼"})
+            test.is_true(put.ok == true, "пункт не принят: " .. tostring(put.error))
+            local shown: any = ask_desktop(service, box, "desktop.list", {})
+            test.eq(shown.tray[1].image, "weather_sun", "значок для пикселей доезжает до темы")
+            test.eq(shown.tray[1].icon, "☼", "и символ для ячеек тоже")
+            local wide = ask_desktop(service, box, "desktop.tray", {key = "weather", text = "x", icon = "ab"})
+            test.is_true(wide.ok == false and tostring(wide.error):find("one character", 1, true) ~= nil,
+                "значок длиннее одного знака — отказ с причиной: " .. tostring(wide.error))
+            local again = ask_desktop(service, box, "desktop.tray", {key = "weather", text = "+18°", ttl = 60})
+            test.eq(again.items, 1, "тот же ключ обновляет пункт, а не добавляет второй")
+
+            local listing: any = ask_desktop(service, box, "desktop.list", {})
+            test.eq(#listing.tray, 1)
+            test.eq(listing.tray[1].text, "+18°")
+            test.is_nil(listing.tray[1].image, "обновление без image снимает и значок")
+            test.is_nil(listing.tray[1].entry, "обновление без entry снимает и entry: пункт — то, что прислали последним")
+            test.eq(listing.tray[1].owner, tostring(process.pid()))
+            test.is_true(listing.tray[1].expires_in > 0 and listing.tray[1].expires_in <= 60,
+                "остаток срока: " .. tostring(listing.tray[1].expires_in))
+
+            -- Каждый отказ — со своей причиной. Молча не показанный пункт
+            -- поставщик принял бы за показанный.
+            local refusals: any = {
+                {body = {text = "x"}, why = "no key"},
+                {body = {key = "k"}, why = "no caption"},
+                {body = {key = "k", text = string.rep("я", 17)}, why = "longer than 16"},
+                {body = {key = "k", text = "x", ttl = 0}, why = "ttl"},
+            }
+            for _, case in ipairs(refusals) do
+                local refused = ask_desktop(service, box, "desktop.tray", case.body)
+                test.is_true(refused.ok == false, "должен быть отказ: " .. case.why)
+                test.is_true(tostring(refused.error):find(case.why, 1, true) ~= nil,
+                    "причина не названа: " .. tostring(refused.error))
+            end
+            -- Шестнадцать знаков — это знаки, а не байты: кириллица проходит.
+            test.is_true(ask_desktop(service, box, "desktop.tray",
+                {key = "wide", text = string.rep("я", 16)}).ok == true, "16 знаков кириллицы — в пределах")
+
+            for index = 3, 6 do
+                test.is_true(ask_desktop(service, box, "desktop.tray",
+                    {key = "k" .. index, text = tostring(index)}).ok == true)
+            end
+            local full = ask_desktop(service, box, "desktop.tray", {key = "k7", text = "7"})
+            test.is_true(full.ok == false and tostring(full.error):find("already holds 6", 1, true) ~= nil,
+                "седьмой пункт обязан получить отказ: " .. tostring(full.error))
+
+            test.is_true(ask_desktop(service, box, "desktop.tray", {key = "k3", remove = true}).ok == true)
+            test.is_true(ask_desktop(service, box, "desktop.tray", {key = "absent", remove = true}).ok == true,
+                "снять несуществующий пункт — не ошибка: второй заход поставщика не должен краснеть")
+
+            -- Срок: пункт, не обновлённый вовремя, уходит сам.
+            test.is_true(ask_desktop(service, box, "desktop.tray", {key = "short", text = "…", ttl = 1}).ok == true)
+            channel.select({time.after("1200ms"):case_receive()})
+            listing = ask_desktop(service, box, "desktop.list", {})
+            local keys = {}
+            for _, item in ipairs(listing.tray) do keys[#keys + 1] = item.key end
+            test.eq(table.concat(keys, ","), "weather,wide,k4,k5,k6",
+                "остаются пункты в порядке появления, без снятого и протухшего")
+
+            process.terminate(tostring(desk.pid))
+        end)
+    end)
+
     test.describe("butschster.tui_desktop порядок окон и фокус", function()
         -- Композитор здесь настоящий, экран — viewport теста, а щелчки едут в
         -- него настоящими событиями мыши. Раньше весь этот класс проверок
@@ -844,7 +918,7 @@ local function define_tests()
             local silent = spawn_pixel_composer(
                 "butschster.tui_desktop.test.pixels.silent", watcher, "silent")
             local told = box.take("composer.refused")
-            test.is_true(tostring(told.error):find("не включается", 1, true) ~= nil,
+            test.is_true(tostring(told.error):find("does not start", 1, true) ~= nil,
                 "отказ обязан называться отказом: " .. tostring(told.error))
             test.is_true(tostring(told.error):find("did not say how large a cell is", 1, true) ~= nil,
                 "отказ обязан нести причину от терминала: " .. tostring(told.error))
@@ -1303,7 +1377,7 @@ local function define_tests()
                 if tostring(told.notice) ~= "" then break end
                 channel.select({time.after("100ms"):case_receive()})
             end
-            test.is_true(tostring(told.notice):find("плоск", 1, true) ~= nil,
+            test.is_true(tostring(told.notice):find("flat", 1, true) ~= nil,
                 "строка состояния обязана назвать причину: [" .. tostring(told.notice) .. "]")
 
             -- И щелчок при этом действительно не работает — иначе жалоба была
@@ -1570,7 +1644,7 @@ local function define_tests()
             test.eq(#images, 1, "в кадр обязано попасть только годное")
             test.eq(images[1].id, "годный")
             test.eq(#complaints, 4, "и каждое негодное обязано быть названо")
-            test.is_true(tostring(complaints[4]):find("дважды", 1, true) ~= nil,
+            test.is_true(tostring(complaints[4]):find("twice", 1, true) ~= nil,
                 "повтор id — это спор о том, что показать, то есть мигание")
         end)
 
@@ -1864,7 +1938,7 @@ local function define_tests()
             local stolen = ask_fresh(service, "desktop.state",
                 {id = id, state = {title = "подделка"}})
             test.is_true(stolen.ok == false, "чужое состояние обязано быть отвергнуто")
-            test.is_true(tostring(stolen.error):find("поставщика", 1, true) ~= nil,
+            test.is_true(tostring(stolen.error):find("provider", 1, true) ~= nil,
                 "отказ обязан называть причину: " .. tostring(stolen.error))
             test.eq(math.tointeger(ask_fresh(service, "desktop.list", {})
                 .windows[1].state_revision) or -1, 1, "подделка не должна двигать счётчик")
@@ -1945,7 +2019,7 @@ local function define_tests()
             end
             test.is_true(orphan.windows[1].waiting == true,
                 "без поставщика вид обязан вернуться в ожидание")
-            test.is_true(tostring(orphan.notice):find("поставщик", 1, true) ~= nil,
+            test.is_true(tostring(orphan.notice):find("provider", 1, true) ~= nil,
                 "и сказать об этом человеку: [" .. tostring(orphan.notice) .. "]")
 
             process.terminate(tostring(desk.pid))

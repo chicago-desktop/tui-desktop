@@ -100,6 +100,15 @@ local FRAME_WINDOW = 200
 -- Выделение самой строки задержки не ждёт.
 local HOVER_DELAY = "300ms"
 
+-- Область уведомлений (трей). Пункт — короткая подпись у часов, которую
+-- кладёт процесс приложения (погода, почта, состояние сервиса). Потолки не
+-- украшение: пункт шире часов съедает кнопки окон, а седьмой пункт почти
+-- всегда значит, что поставщик кладёт новый ключ на каждое обновление вместо
+-- того, чтобы обновлять свой.
+local TRAY_MAX = 6
+local TRAY_TEXT = 16
+local TRAY_KEY = 64
+
 -- Печатаемый текст, который агент шлёт в окно, отправляется по одной
 -- клавише: у окна нет «вставки», а `paste` доезжает до программы только
 -- если та включила bracketed paste.
@@ -154,7 +163,7 @@ local function run(options: any)
     -- пустой экран, в котором нечего искать. Пусть отказ назовёт причину.
     local chrome: any = options.chrome
     if type(chrome) ~= "table" then
-        return nil, "композитору не передана тема (options.chrome)"
+        return nil, "the compositor was given no theme (options.chrome)"
     end
 
     -- Пиксельный хром: рамки, заголовки, значки и панель задач приезжают
@@ -174,11 +183,11 @@ local function run(options: any)
     local cell_w, cell_h = 0, 0
     if PIXELS then
         if type(chrome.paint) ~= "function" then
-            return nil, "пиксельный режим не включается: тема не умеет chrome.paint"
+            return nil, "pixel mode does not start: the theme has no chrome.paint"
         end
         if type(options.cell_size) ~= "function" then
-            return nil, "пиксельный режим не включается: оболочка не дала, чем узнать "
-                .. "размер ячейки (options.cell_size — обычно gfx.cell_size)"
+            return nil, "pixel mode does not start: the shell gave nothing to learn "
+                .. "the cell size with (options.cell_size — usually gfx.cell_size)"
         end
     end
     local function refresh_cell_size()
@@ -187,13 +196,13 @@ local function run(options: any)
         if type(w) ~= "number" or type(h) ~= "number" then
             -- gfx.cell_size() отвечает (nil, причина): вторым значением тут
             -- приезжает именно она.
-            return nil, "пиксельный режим не включается: " .. tostring(h)
+            return nil, "pixel mode does not start: " .. tostring(h)
         end
         local next_w = math.tointeger(math.floor(w)) or 0
         local next_h = math.tointeger(math.floor(h)) or 0
         if next_w < 1 or next_h < 1 then
-            return nil, "пиксельный режим не включается: размер ячейки "
-                .. tostring(w) .. "x" .. tostring(h) .. " невозможен"
+            return nil, "pixel mode does not start: a cell size of "
+                .. tostring(w) .. "x" .. tostring(h) .. " is impossible"
         end
         cell_w, cell_h = next_w, next_h
         return true
@@ -206,7 +215,7 @@ local function run(options: any)
         or "butschster.tui_desktop.desktop"
 
     local HINT = type(options.hint) == "string" and options.hint
-        or "alt+n — окно с bash · alt+o — приложения · ctrl+q — выход"
+        or "alt+n — bash window · alt+o — programs · ctrl+q — quit"
 
     -- Вход в систему. Оболочка отдаёт функцию, которая рисует диалог на этом
     -- же терминале и возвращает личность: {actor, scope, context = {...}}.
@@ -309,7 +318,7 @@ local function run(options: any)
         restore_report.skipped = true
     elseif store_err then
         restore_report.error = tostring(store_err)
-        log:error("хранилище окон недоступно", {error = tostring(store_err)})
+        log:error("window storage unavailable", {error = tostring(store_err)})
     else
         local restored, failed = 0, {}
         for _, window in ipairs(stored or {}) do
@@ -318,14 +327,14 @@ local function run(options: any)
                 restored = restored + 1
             else
                 failed[#failed + 1] = window.name .. ": " .. tostring(aerr)
-                log:error("окно не поднялось", {window = window.name, error = tostring(aerr)})
+                log:error("window did not come up", {window = window.name, error = tostring(aerr)})
             end
         end
         restore_report.restored = restored
         restore_report.failed = #failed
         restore_report.names = failed
         if restored > 0 or #failed > 0 then
-            log:info("окна восстановлены",
+            log:info("windows restored",
                 {restored = restored, failed = #failed, names = table.concat(failed, ", ")})
         end
     end
@@ -380,7 +389,7 @@ local function run(options: any)
         -- Упавший диалог — отказ входа с причиной, а не композитор, оставивший
         -- терминал в alternate screen без единого слова.
         local ok, identity, why = pcall(logon, screen)
-        if not ok then identity, why = nil, "диалог входа упал: " .. tostring(identity) end
+        if not ok then identity, why = nil, "the logon dialog crashed: " .. tostring(identity) end
         if type(identity) ~= "table" or identity.actor == nil or identity.scope == nil then
             -- Отказ входа — это выход, а не стол под служебным актором: стол
             -- без пользователя выглядел бы как вошедший, а окна в нём
@@ -389,7 +398,7 @@ local function run(options: any)
             assert(tty.mouse(false))
             assert(out:close())
             assert(tty.stop())
-            return nil, type(why) == "string" and why or "вход не выполнен"
+            return nil, type(why) == "string" and why or "logon failed"
         end
         IDENTITY = {actor = identity.actor, scope = identity.scope,
             context = type(identity.context) == "table" and identity.context or {}}
@@ -467,6 +476,121 @@ local function run(options: any)
     -- см. `hover_menu`. Объявлен здесь, потому что цикл кладёт его в select.
     local hover_timer: any = nil
     local clock = ""
+    -- Пункты трея в порядке появления. Таблицей, а не локальным списком: см.
+    -- `meter` — после ошибки под pcall присваивание локальной из замыкания
+    -- владелец больше не видит.
+    local tray: any = {items = {}}
+
+    -- Что трей отдаёт теме и командному каналу. Теме — только то, что она
+    -- рисует и во что превращает попадание; наружу — ещё владелец и остаток
+    -- срока, без них «пункт висит» не объяснить.
+    local function tray_view(detailed: boolean): any
+        local out = {}
+        local now = time.now():unix_nano()
+        for _, item in ipairs(tray.items) do
+            local view: any = {key = item.key, text = item.text, entry = item.entry, title = item.title,
+                image = item.image, icon = item.icon}
+            if detailed then
+                view.owner = item.owner
+                if item.expires ~= nil then
+                    local left: integer = math.tointeger((tonumber(item.expires) or now) - now) or 0
+                    view.expires_in = math.max(0, left // 1000000000)
+                end
+            end
+            out[#out + 1] = view
+        end
+        return out
+    end
+
+    -- Пункт с истёкшим сроком снимается. Поставщик, переставший обновлять
+    -- свой пункт, скорее всего остановился, а подпись, пережившая его,
+    -- выдаёт старое значение за нынешнее — вид исправного трея, который врёт.
+    -- Отвечает, изменился ли трей: перерисовка нужна только тогда.
+    local function prune_tray(): boolean
+        local now = time.now():unix_nano()
+        local kept, changed = {}, false
+        for _, item in ipairs(tray.items) do
+            if item.expires ~= nil and item.expires <= now then changed = true
+            else kept[#kept + 1] = item end
+        end
+        if changed then tray.items = kept end
+        return changed
+    end
+
+    -- set_tray(body, from) -> принят, причина, изменился ли вид
+    --
+    -- Ключ выбирает поставщик: повторная команда с тем же ключом обновляет
+    -- пункт, а не добавляет второй. Владельцем пункт не запирается нарочно:
+    -- поставщик-сервис после перезапуска приходит с новым pid, и запертый
+    -- пункт висел бы мёртвым до конца срока рядом с новым. Подменить чужую
+    -- подпись может любой процесс, который и так может закрыть любое окно
+    -- командой `desktop.close`; `entry` пункта открывает то же, что меню.
+    local function set_tray(body: any, from: any): (boolean, any, boolean)
+        local key = type(body.key) == "string" and body.key or ""
+        if key == "" then return false, "the tray item has no key", false end
+        if #key > TRAY_KEY then return false, "the tray item key is longer than " .. TRAY_KEY, false end
+        local pruned = prune_tray()
+
+        local index = 0
+        for position, item in ipairs(tray.items) do
+            if item.key == key then index = position end
+        end
+        if body.remove == true then
+            if index == 0 then return true, nil, pruned end
+            local kept = {}
+            for position, item in ipairs(tray.items) do
+                if position ~= index then kept[#kept + 1] = item end
+            end
+            tray.items = kept
+            return true, nil, true
+        end
+
+        local text = type(body.text) == "string" and body.text or ""
+        if text == "" then return false, "tray item " .. key .. " has no caption", pruned end
+        if #runes(text) > TRAY_TEXT then
+            return false, "the tray caption is longer than " .. TRAY_TEXT .. " characters", pruned
+        end
+        local entry = type(body.entry) == "string" and body.entry ~= "" and body.entry or nil
+        local title = type(body.title) == "string" and body.title ~= "" and body.title or nil
+        -- A picture beside the caption: `image` — a name from the theme's
+        -- icon catalog (pixels), `icon` — one character for the cell theme.
+        -- Both optional; the theme that has neither draws the caption alone.
+        local image = type(body.image) == "string" and body.image ~= "" and body.image or nil
+        if image ~= nil and #image > TRAY_KEY then
+            return false, "the tray item image name is longer than " .. TRAY_KEY, pruned
+        end
+        local icon = type(body.icon) == "string" and body.icon ~= "" and body.icon or nil
+        if icon ~= nil and #runes(icon) > 1 then
+            return false, "the tray item icon is one character", pruned
+        end
+        local expires = nil
+        if body.ttl ~= nil then
+            local ttl: number = tonumber(body.ttl) or 0
+            if ttl <= 0 then
+                return false, "a tray item's ttl is a number of seconds above zero", pruned
+            end
+            expires = time.now():unix_nano() + math.floor(ttl * 1000000000)
+        end
+        if index == 0 and #tray.items >= TRAY_MAX then
+            return false, "the tray already holds " .. TRAY_MAX .. " items", pruned
+        end
+
+        local item: any = {key = key, text = text, entry = entry, title = title,
+            image = image, icon = icon,
+            expires = expires, owner = from ~= nil and tostring(from) or nil}
+        if index == 0 then
+            tray.items[#tray.items + 1] = item
+            return true, nil, true
+        end
+        local old = tray.items[index]
+        tray.items[index] = item
+        -- Продление срока без смены подписи кадра не стоит: поставщик
+        -- обновляет пункт по таймеру, и каждое такое обновление иначе было бы
+        -- полной перерисовкой панели.
+        local changed = old.text ~= text or old.entry ~= entry or old.title ~= title
+            or old.image ~= image or old.icon ~= icon
+        return true, nil, changed or pruned
+    end
 
     local quitting = false
     -- Экран прощания просят только через «Завершение работы» в меню: ctrl+q
@@ -827,14 +951,11 @@ local function run(options: any)
             end
         end
 
-        local status
-        if top then
-            status = string.format("%s · %dx%d · окон: %d · alt+n bash · alt+o приложения · alt+w закрыть · ctrl+q выход",
-                top.title, math.max(0, top.w - FRAME_W), math.max(0, top.h - FRAME_H), #windows)
-        else
-            status = "нет окон · alt+n окно с bash · alt+o приложения · ctrl+q выход"
-        end
-        if notice ~= "" then status = notice end
+        -- The taskbar carries only notices — an open that failed, a theme that
+        -- returned a bad frame. Windows 95 has no key hint there (owner's rule,
+        -- 2026-09-11); the keys are explained on the empty desktop (`hint`).
+        -- `status` stays for older themes and carries the same text.
+        local status = notice
 
         -- Состояние для растровой темы — объединение того, что в режиме
         -- символов приезжает тремя вызовами. Имена полей те же нарочно: тема,
@@ -848,7 +969,7 @@ local function run(options: any)
                 items = desk.items, failure = desk.failure, selected = selected_id,
                 menu = menu and {items = menu.items, failure = menu.failure,
                     open = menu.open, cursor = menu.cursor, anchor = menu.anchor} or nil,
-                status = status, clock = clock, hint = HINT,
+                status = status, notice = notice, clock = clock, tray = tray_view(false), hint = HINT,
             }, cell_w, cell_h)
 
             local complaints
@@ -863,7 +984,7 @@ local function run(options: any)
             if #hits.desktop > 0 then desk_hits = hits.desktop end
             if quarrel then complaints[#complaints + 1] = quarrel end
             for _, complaint in ipairs(complaints) do
-                log:warn("тема отдала негодный кадр", {reason = complaint})
+                log:warn("the theme returned a bad frame", {reason = complaint})
             end
             -- И в строку состояния тоже. Лог терминального хоста заглушён —
             -- иначе он разъедет кадр, — а значит жалоба, рассказанная только
@@ -878,7 +999,11 @@ local function run(options: any)
                 -- значка (с якорем) — не его.
                 menu_open = menu ~= nil and menu.anchor == nil,
                 status = status,
+                notice = notice,
                 clock = clock,
+                -- Трей стоит у часов. Тема без него его просто не рисует:
+                -- поле необязательное, как и сами часы.
+                tray = tray_view(false),
             })
             if type(bar_hits) ~= "table" then bar_hits = {} end
 
@@ -947,7 +1072,7 @@ local function run(options: any)
             declared, unknown = programs.item(record)
             if declared then window_type = declared.window_type end
             if unknown then
-                log:warn("неизвестный тип окна", {
+                log:warn("unknown window type", {
                     entry = entry, window_type = unknown, used = programs.DEFAULT_TYPE,
                 })
             end
@@ -998,17 +1123,17 @@ local function run(options: any)
         end
         if content == "pixels" then
             if not render_ref then
-                return nil, "окно " .. entry .. " объявило содержимое видом, "
-                    .. "но не назвало render — рисовать его нечем"
+                return nil, "window " .. entry .. " declared its content as a view "
+                    .. "but named no render — nothing to draw it with"
             end
             if not registry.get(render_ref) then
-                return nil, "окно " .. entry .. ": записи " .. render_ref .. " нет — "
-                    .. "мёртвая ссылка на отрисовку молчит до первого открытия"
+                return nil, "window " .. entry .. ": entry " .. render_ref .. " does not exist — "
+                    .. "a dead render reference stays silent until the first open"
             end
 
             if state_ref and not registry.get(state_ref) then
-                return nil, "окно " .. entry .. ": записи " .. state_ref .. " нет — "
-                    .. "поставщик состояния объявлен, но не существует"
+                return nil, "window " .. entry .. ": entry " .. state_ref .. " does not exist — "
+                    .. "the state provider is declared but missing"
             end
 
             next_id = next_id + 1
@@ -1050,7 +1175,7 @@ local function run(options: any)
                             cell_w = cell_w, cell_h = cell_h,
                         })
                 if not state_pid then
-                    return nil, "поставщик состояния не запустился: " .. tostring(serr)
+                    return nil, "the state provider did not start: " .. tostring(serr)
                 end
                 view_window.state_pid = state_pid
                 view_window.ready = true
@@ -1189,7 +1314,7 @@ local function run(options: any)
             args = item.args, window_type = item.window_type, image = item.image,
         }, nil)
         if window then raise(window)
-        else notice = "не открылось: " .. tostring(err) end
+        else notice = "could not open: " .. tostring(err) end
     end
 
     -- Контекстное меню значка стола: «Открыть» — то же, что двойной щелчок,
@@ -1202,12 +1327,12 @@ local function run(options: any)
     local function context_items(spot: any): any
         local items = {}
         if type(spot.entry) == "string" and spot.entry ~= "" then
-            items[#items + 1] = {label = "Открыть", bold = true,
+            items[#items + 1] = {label = "Open", bold = true,
                 entry = spot.entry, title = spot.title, w = spot.w, h = spot.h,
                 args = spot.args, window_type = spot.window_type, image = spot.image}
         end
         if type(spot.properties) == "string" and spot.properties ~= "" then
-            items[#items + 1] = {label = "Свойства", entry = spot.properties,
+            items[#items + 1] = {label = "Properties", entry = spot.properties,
                 separator_before = #items > 0 or nil}
         end
         return items
@@ -1440,7 +1565,7 @@ local function run(options: any)
                             -- после — на старом, и человек решит, что
                             -- перезапуск его потерял.
                             item.x, item.y = drag.from_x, drag.from_y
-                            notice = "значок не переехал: " .. tostring(err)
+                            notice = "the icon did not move: " .. tostring(err)
                         end
                     end
                 end
@@ -1501,7 +1626,7 @@ local function run(options: any)
                     -- Пустой стол: «Свойства» стола, если оболочка назвала
                     -- окно (`options.desktop_properties`) — как в Windows 95.
                     selected_id = nil
-                    items = {{label = "Свойства", entry = desktop_properties}}
+                    items = {{label = "Properties", entry = desktop_properties}}
                 end
                 if #items > 0 then
                     menu = {items = items, failure = nil, open = {}, cursor = 1,
@@ -1683,13 +1808,13 @@ local function run(options: any)
         end
         local found, err = registry.find({["meta.type"] = WINDOW_META_TYPE})
         if err then return {}, tostring(err) end
-        if type(found) ~= "table" then return {}, "реестр ответил не списком" end
+        if type(found) ~= "table" then return {}, "the registry did not answer with a list" end
         -- Скрытые (`meta.in_menu: false`) сюда не попадают, неизвестный тип
         -- считается обычным окном. Опечатка в типе не повод не показать
         -- программу, но и молчать о ней нельзя — иначе она живёт вечно.
         local items, warnings = programs.menu(found)
         for _, warning in ipairs(warnings) do
-            log:warn("неизвестный тип окна", {
+            log:warn("unknown window type", {
                 entry = warning.entry, window_type = warning.window_type,
                 used = programs.DEFAULT_TYPE,
             })
@@ -1890,7 +2015,7 @@ local function run(options: any)
                     -- молчащая клавиша неотличима от сломанного меню. Курсор
                     -- 0 — другое: строки не выбрано, папку раскрыло наведение.
                     if (math.tointeger(menu.cursor) or 0) > 0 then
-                        notice = "тема не отметила выбранную строку меню"
+                        notice = "the theme did not mark the selected menu row"
                         draw()
                     end
                 elseif type(spot.open) == "table" then
@@ -1935,7 +2060,7 @@ local function run(options: any)
             if event.key == "n" then
                 local window, err = open_window({}, nil)
                 if window then raise(window) end
-                if err then log:error("окно не открылось", {error = tostring(err)}) end
+                if err then log:error("window did not open", {error = tostring(err)}) end
                 draw()
                 return "handled"
             elseif event.key == "w" and top then
@@ -2061,7 +2186,7 @@ local function run(options: any)
             })
         end
         notice = reason
-        log:warn("команда отклонена, а спросившего нет",
+        log:warn("command refused and nobody asked",
             {reason = reason, command = tostring(topic)})
         return true
     end
@@ -2072,6 +2197,9 @@ local function run(options: any)
         local window = find(type(body.id) == "string" and body.id or "")
 
         if topic == "desktop.list" then
+            -- Истёкшие пункты снимаются и здесь: иначе список сказал бы про
+            -- пункт, которого на экране уже нет, до следующего тика часов.
+            local pruned = prune_tray()
             local list = {}
             for _, item in ipairs(windows) do list[#list + 1] = describe(item) end
             local top = focused()
@@ -2119,8 +2247,22 @@ local function run(options: any)
                 -- причина и сводка avg/p95/max по последним FRAME_WINDOW.
                 frame = frame_report(body.frame_samples == true),
                 pixels = PIXELS,
+                -- Трей с владельцами и остатком срока: «пункт не появился» и
+                -- «появился, а тема его не нарисовала» иначе неотличимы.
+                tray = tray_view(true),
                 restore = restore_report}, to, topic)
-            return false
+            return pruned
+        end
+
+        -- Пункт области уведомлений: `{key, text, entry?, title?, ttl?}` кладёт
+        -- или обновляет, `{key, remove = true}` снимает. Отказ называет
+        -- причину — поставщик, которому трей тихо не показал пункт, решил бы,
+        -- что показал.
+        if topic == "desktop.tray" then
+            local accepted, why, changed = set_tray(body, from)
+            if not accepted then return refuse(tostring(why), to, topic, from) end
+            reply({ok = true, key = body.key, items = #tray.items}, to, topic)
+            return changed
         end
 
         if topic == "desktop.refresh" then
@@ -2136,19 +2278,19 @@ local function run(options: any)
         -- это право есть, и строка к тому моменту уже в хранилище.
         if topic == "desktop.workshop" then
             local name = type(body.name) == "string" and body.name or ""
-            if name == "" then return refuse("имя окна не названо", to, topic, from) end
+            if name == "" then return refuse("window name not given", to, topic, from) end
             local entry_id = apps.entry_id(name)
             if body.remove == true then
                 local removed, rerr = apps.remove(name)
-                if not removed then return refuse("снятие из реестра: " .. tostring(rerr), to, topic, from) end
+                if not removed then return refuse("removing from the registry: " .. tostring(rerr), to, topic, from) end
                 reply({ok = true, name = name, entry = entry_id, live = false}, to, topic)
                 return false
             end
             local stored_window, gerr = repo.get(name)
-            if gerr then return refuse("хранилище: " .. tostring(gerr), to, topic, from) end
-            if not stored_window then return refuse("окна " .. name .. " нет в хранилище", to, topic, from) end
+            if gerr then return refuse("storage: " .. tostring(gerr), to, topic, from) end
+            if not stored_window then return refuse("window " .. name .. " is not in storage", to, topic, from) end
             local applied, aerr = apps.apply(stored_window)
-            if not applied then return refuse("применение: " .. tostring(aerr), to, topic, from) end
+            if not applied then return refuse("applying: " .. tostring(aerr), to, topic, from) end
             reply({ok = true, name = name, entry = entry_id, live = registry.get(entry_id) ~= nil}, to, topic)
             return false
         end
@@ -2167,12 +2309,12 @@ local function run(options: any)
         -- опечатку в идентификаторе, которого не посылал, а ветка про
         -- неизвестную команду была недостижима вовсе.
         if not WINDOW_COMMANDS[topic] then
-            return refuse("неизвестная команда " .. tostring(topic), to, topic, from)
+            return refuse("unknown command " .. tostring(topic), to, topic, from)
         end
         if not window then
             -- Молчаливое «нет такого» превратило бы опечатку в id в успешную
             -- команду.
-            return refuse("нет окна " .. tostring(body.id), to, topic, from)
+            return refuse("no window " .. tostring(body.id), to, topic, from)
         end
 
         if topic == "desktop.close" then
@@ -2186,7 +2328,7 @@ local function run(options: any)
             return true
         elseif topic == "desktop.resize" then
             if window.resizable == false then
-                return refuse("окно " .. window.id .. " объявило фиксированный размер",
+                return refuse("window " .. window.id .. " declared a fixed size",
                     to, topic, from)
             end
             resize_window(window, body.w, body.h)
@@ -2202,13 +2344,13 @@ local function run(options: any)
             -- — а вид, нарисованный подложенными данными, от настоящего
             -- неотличим.
             if window.content ~= "pixels" then
-                return refuse("окно " .. window.id .. " рисует себя само, состояние ему не шлют",
+                return refuse("window " .. window.id .. " draws itself; it takes no state",
                     to, topic, from)
             end
             if window.state_pid == nil or from == nil
                 or tostring(window.state_pid) ~= tostring(from) then
-                return refuse("состояние окна " .. window.id
-                    .. " принимается только от его поставщика", to, topic, from)
+                return refuse("the state of window " .. window.id
+                    .. " is accepted only from its provider", to, topic, from)
             end
             window.content_state = body.state
             if type(body.title) == "string" and body.title ~= "" then window.title = body.title end
@@ -2224,7 +2366,7 @@ local function run(options: any)
             return false
         elseif topic == "desktop.type" then
             if not window.ready then
-                return refuse("окно " .. window.id .. " ещё не приняло ввод", to, topic, from)
+                return refuse("window " .. window.id .. " does not take input yet", to, topic, from)
             end
             local sent = 0
             for _, char in ipairs(runes(type(body.text) == "string" and body.text or "")) do
@@ -2239,20 +2381,20 @@ local function run(options: any)
             return false
         elseif topic == "desktop.key" then
             local key = type(body.key) == "string" and body.key or ""
-            if key == "" then return refuse("клавиша не названа", to, topic, from) end
+            if key == "" then return refuse("key not named", to, topic, from) end
             local ok = send_to(window, {
                 type = "key", key = key, key_type = body.key_type or key,
                 action = "press", ctrl = not not body.ctrl,
                 alt = not not body.alt, shift = not not body.shift,
             })
-            if not ok then return refuse("окно " .. window.id .. " не приняло ввод", to, topic, from) end
+            if not ok then return refuse("window " .. window.id .. " did not take the input", to, topic, from) end
             reply({ok = true}, to, topic)
             return false
         end
 
         -- Досюда доходит только команда окна, которую забыли разобрать выше:
         -- список WINDOW_COMMANDS и ветки обязаны совпадать.
-        return refuse("команда " .. tostring(topic) .. " объявлена, но не разобрана", to, topic, from)
+        return refuse("command " .. tostring(topic) .. " is declared but not handled", to, topic, from)
     end
 
     -- ─── цикл ────────────────────────────────────────────────────────────
@@ -2304,7 +2446,11 @@ local function run(options: any)
         if selected.channel == ticker then
             meter.trigger = "tick"
             ticker = time.after(CLOCK_TICK)
-            if tick_clock() then draw() end
+            -- Оба вопроса задаются всегда: `a() or b()` не спросил бы трей в
+            -- ту минуту, когда сменились часы.
+            local ticked = tick_clock()
+            local pruned = prune_tray()
+            if ticked or pruned then draw() end
             handled = true
         end
         if hover_timer ~= nil and selected.channel == hover_timer then
@@ -2371,8 +2517,8 @@ local function run(options: any)
                             window.state_pid = nil
                             window.waiting = true
                             window.ready = false
-                            notice = "поставщик состояния окна " .. window.id .. " остановился"
-                            log:warn("поставщик состояния остановился",
+                            notice = "the state provider of window " .. window.id .. " stopped"
+                            log:warn("state provider stopped",
                                 {window = window.id, entry = tostring(window.state_ref)})
                             break
                         end
@@ -2390,7 +2536,7 @@ local function run(options: any)
                     -- resize every client and rebuild rasters at native size.
                     local refreshed, refresh_error = refresh_cell_size()
                     if refreshed then refresh_frame()
-                    else notice = "размер ячейки не обновлён: " .. tostring(refresh_error) end
+                    else notice = "cell size not refreshed: " .. tostring(refresh_error) end
                     -- Ресайз тоже приходит с нулями, когда терминал исчез;
                     -- нулевой холст уронил бы композитор вместе со всеми окнами.
                     local w = math.floor(tonumber(event.width) or 0)
