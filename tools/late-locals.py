@@ -16,7 +16,7 @@ inside different functions are normal and not an error. In-function
 declarations of the same variable higher up in the file count as shadowing
 and clear the suspicion.
 
-    python3 tools/late-locals.py ../kickside-module ../windows-module
+    python3 tools/late-locals.py ../tui-desktop ../shell
 """
 import re
 import sys

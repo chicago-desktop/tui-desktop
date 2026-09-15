@@ -1824,7 +1824,7 @@ local function run(options: any)
     -- the physical terminal gains or loses focus — so a window reads one event
     -- whatever moved the keyboard. Without it a window never learns it lost
     -- the keyboard: an armed button or a captured scrollbar waits for a
-    -- release that now goes to another window (windows-module sdk-review A11).
+    -- release that now goes to another window (shell sdk-review A11).
     --
     -- The loser hears first, then the winner. The winner is remembered only
     -- once the send succeeded: a window that has not drawn its first frame is

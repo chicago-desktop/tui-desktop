@@ -5,7 +5,7 @@ VIS    := public
 
 # The wippy binary every target runs. The compositor's tests need a runtime
 # with terminal.ssh and CANCEL, so run them with the local build:
-#   make test WIPPY=~/repos/wippy/runtime/dist/wippy-linux-amd64
+#   make test WIPPY=../runtime/dist/wippy-linux-amd64   # the fork, a sibling of this directory
 # With the release binary the desktop suites fail on timeouts ("did not
 # register", "no answer"), which looks like a defect in the module.
 WIPPY ?= wippy

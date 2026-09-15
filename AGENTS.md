@@ -207,8 +207,8 @@ searching registry declarations.
 ## Window SDK
 
 When changing or adding a window, use the shared
-window SDK (`../windows-module/docs/sdk.md`) and
-window-app skill (`../windows-module/skills/wippy-window-app/SKILL.md`).
+window SDK (`../shell/docs/sdk.md`) and
+window-app skill (`../shell/skills/wippy-window-app/SKILL.md`).
 The compositor owns the outer window; applications use the common input,
 geometry, scroll and lifecycle contracts. Preserve the declarative path:
 registry metadata plus components must not need per-app shell edits.
