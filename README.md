@@ -1,6 +1,6 @@
 # chicago/tui-desktop
 
-Shared window contract: [Windows shell SDK](https://github.com/chicago-desktop/shell/blob/main/docs/sdk.md).
+Shared window contract: [Chicago shell SDK](https://github.com/chicago-desktop/shell/blob/master/docs/sdk.md).
 The base holds `window_api`, `geometry`, `input` and `scroll`; the ready-made
 declarative components and the skill are in the `chicago/shell` module.
 
@@ -27,7 +27,7 @@ Four parts, and the boundary between them is the reason the module is built
 this way and not simpler.
 
 - Part: **Mechanics**; What it is: `…desktop:library` — one function `run(options)`: windows in z-order, input, hit test, command channel, process hosting; Who writes it: this module
-- Part: **Shell**; What it is: a process that calls `run` with its own theme, catalog and desktop layout; Who writes it: the application; here there are two — the stock one and Windows 95 in `chicago/shell`
+- Part: **Shell**; What it is: a process that calls `run` with its own theme, catalog and desktop layout; Who writes it: the application; here there are two — the stock one and the Chicago shell in `chicago/shell`
 - Part: **Theme**; What it is: pure drawing functions: frames, bars, menus, icons. Returns the hit map; Who writes it: the shell
 - Part: **Window**; What it is: a registry entry. Usually a process that writes to its viewport and does not know it is a window; it can also be a view without a process; Who writes it: the application
 

@@ -10,6 +10,7 @@ keywords:
   - tui
   - terminal
   - desktop
+  - chicago
 exclude_meta:
   type:
     - test
