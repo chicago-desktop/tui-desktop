@@ -19,7 +19,7 @@ local repo = {}
 -- потерянное соединение не даёт о себе знать, пока не кончится пул.
 local function with_db(work)
     local db, err = sql.get(DB_ID)
-    if err or not db then return nil, err or ("база недоступна: " .. DB_ID) end
+    if err or not db then return nil, err or ("database unavailable: " .. DB_ID) end
     local ok, result, work_err = pcall(work, db)
     db:release()
     if not ok then return nil, tostring(result) end

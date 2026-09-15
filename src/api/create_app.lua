@@ -46,7 +46,7 @@ local function handler()
     local _, serr = repo.save(window)
     if serr then
         res:set_status(http.STATUS.INTERNAL_ERROR)
-        res:write_json({success = false, error = "сохранение: " .. tostring(serr)})
+        res:write_json({success = false, error = "saving: " .. tostring(serr)})
         return
     end
 

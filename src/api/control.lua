@@ -46,10 +46,10 @@ local function await(budget)
     while true do
         local result = channel.select({inbox:case_receive(), expiry:case_receive()})
         if result.channel == expiry then
-            return nil, "десктоп не ответил за " .. budget
+            return nil, "the desktop did not answer within " .. budget
         end
         if not result.ok then
-            return nil, "inbox вызова закрылся, пока ждали десктоп"
+            return nil, "the call's inbox closed while waiting for the desktop"
         end
         local message = result.value
         if message:topic() == REPLY_TOPIC then
@@ -66,8 +66,8 @@ end
 function control.call(topic, body)
     local pid, lerr = process.registry.lookup(SERVICE_NAME)
     if not pid then
-        return nil, "десктоп не запущен (" .. tostring(lerr)
-            .. "): запустите `wippy run --host butschster.tui_desktop:terminal desktop`"
+        return nil, "the desktop is not running (" .. tostring(lerr)
+            .. "): start it with `wippy run --host butschster.tui_desktop:terminal desktop`"
     end
 
     body = type(body) == "table" and body or {}
@@ -75,13 +75,13 @@ function control.call(topic, body)
 
     local sent, serr = process.send(pid, topic, body)
     if not sent then
-        return nil, "не удалось передать команду десктопу: " .. tostring(serr)
+        return nil, "could not pass the command to the desktop: " .. tostring(serr)
     end
 
     local answer, aerr = await(BUDGET)
     if not answer then return nil, aerr end
     if answer.ok == false then
-        return nil, tostring(answer.error or "десктоп отказал без причины")
+        return nil, tostring(answer.error or "the desktop refused without a reason")
     end
     return answer, nil
 end

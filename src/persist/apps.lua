@@ -82,31 +82,31 @@ function apps.rejected_spec(given: any): any
     local function library(id: any, field: string)
         local entry: any = registry.get(tostring(id))
         if not entry then
-            out[#out + 1] = field .. ": записи " .. tostring(id) .. " нет в реестре"
+            out[#out + 1] = field .. ": entry " .. tostring(id) .. " is not in the registry"
         elseif type(entry) == "table" and entry.kind ~= nil and entry.kind ~= "library.lua" then
-            out[#out + 1] = field .. ": " .. tostring(id) .. " — не библиотека (" .. tostring(entry.kind) .. ")"
+            out[#out + 1] = field .. ": " .. tostring(id) .. " — not a library (" .. tostring(entry.kind) .. ")"
         end
     end
     if type(spec.imports) == "table" then
         for alias, id in pairs(spec.imports) do
             local name = tostring(alias)
             if not name:match("^[a-z_][a-z0-9_]*$") then
-                out[#out + 1] = "imports: имя " .. name .. " — строчные латинские буквы, цифры и подчёркивание"
+                out[#out + 1] = "imports: name " .. name .. " — lowercase Latin letters, digits and underscore"
             elseif name == "desktop" then
-                out[#out + 1] = "imports: имя desktop занято библиотекой десктопа"
+                out[#out + 1] = "imports: the name desktop is taken by the desktop library"
             elseif type(id) ~= "string" or id == "" then
-                out[#out + 1] = "imports: у " .. name .. " нет идентификатора записи"
+                out[#out + 1] = "imports: " .. name .. " has no entry id"
             else
                 library(id, "imports")
             end
         end
     end
     if spec.window_type ~= nil and not apps.WINDOW_TYPES[tostring(spec.window_type)] then
-        out[#out + 1] = "window_type: app, dialog или tool"
+        out[#out + 1] = "window_type: app, dialog or tool"
     end
     if spec.pixel_render ~= nil then
         if type(spec.pixel_render) ~= "string" or spec.pixel_render == "" then
-            out[#out + 1] = "pixel_render: идентификатор библиотеки вида"
+            out[#out + 1] = "pixel_render: the id of a view library"
         else
             library(spec.pixel_render, "pixel_render")
         end
@@ -122,17 +122,17 @@ function apps.prepare(body: any): (any, any)
     local given: any = type(body) == "table" and body or {}
     local name = type(given.name) == "string" and given.name or ""
     if not name:match("^[a-z][a-z0-9_]*$") then
-        return nil, "name: строчные латинские буквы, цифры и подчёркивание, начиная с буквы"
+        return nil, "name: lowercase Latin letters, digits and underscore, starting with a letter"
     end
     local source = type(given.source) == "string" and given.source or ""
-    if source == "" then return nil, "source: код окна обязателен" end
+    if source == "" then return nil, "source: the window code is required" end
     -- Процесс запускается методом main. Запись без него применится молча и
     -- умрёт при первом открытии, уже без объяснения причины.
     if not source:find("main", 1, true) then
-        return nil, "source: код обязан возвращать таблицу с функцией main"
+        return nil, "source: the code must return a table with a main function"
     end
     local refused = apps.rejected_modules(given.modules)
-    if #refused > 0 then return nil, "modules: недоступны — " .. table.concat(refused, ", ") end
+    if #refused > 0 then return nil, "modules: unavailable — " .. table.concat(refused, ", ") end
     local spec_refused = apps.rejected_spec(given)
     if #spec_refused > 0 then return nil, table.concat(spec_refused, "; ") end
     return {
@@ -194,7 +194,7 @@ function apps.build_entry(window)
         title = window.title,
         width = window.width,
         height = window.height,
-        comment = "Собрано в рантайме; исходник хранится в butschster_tui_desktop_windows.",
+        comment = "Built in the runtime; the source is stored in butschster_tui_desktop_windows.",
     }
     -- Папка меню — как у записи из файла, тем же полем. Пустая не пишется
     -- вовсе: «не названа» и «названа пустой» для оболочки разные ответы,
@@ -239,7 +239,7 @@ end
 -- правка окна выглядела бы как «имя занято навсегда».
 function apps.apply(window)
     local snapshot, serr = registry.snapshot()
-    if not snapshot then return nil, "снимок реестра: " .. tostring(serr) end
+    if not snapshot then return nil, "registry snapshot: " .. tostring(serr) end
 
     local entry = apps.build_entry(window)
     local changes = snapshot:changes()
@@ -250,7 +250,7 @@ function apps.apply(window)
     end
 
     local version, aerr = changes:apply()
-    if not version then return nil, "применение версии: " .. tostring(aerr) end
+    if not version then return nil, "applying the version: " .. tostring(aerr) end
     return true, nil
 end
 
@@ -263,12 +263,12 @@ function apps.remove(name)
     if not registry.get(id) then return true, nil end
 
     local snapshot, serr = registry.snapshot()
-    if not snapshot then return nil, "снимок реестра: " .. tostring(serr) end
+    if not snapshot then return nil, "registry snapshot: " .. tostring(serr) end
 
     local changes = snapshot:changes()
     changes:delete(id)
     local version, aerr = changes:apply()
-    if not version then return nil, "применение версии: " .. tostring(aerr) end
+    if not version then return nil, "applying the version: " .. tostring(aerr) end
     return true, nil
 end
 

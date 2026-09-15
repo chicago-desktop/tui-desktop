@@ -32,7 +32,7 @@ local function main(command)
         {pty = {term = "xterm-256color"}})
     if not proc then
         executor:release()
-        error("окно не смогло запустить программу: " .. tostring(perr))
+        error("the window could not start the program: " .. tostring(perr))
     end
 
     -- attach_terminal ПОГЛОЩАЕТ proc: дальше владелец жизненного цикла —
@@ -40,7 +40,7 @@ local function main(command)
     local session, serr = proc:attach_terminal()
     if not session then
         executor:release()
-        error("окно не смогло занять терминал: " .. tostring(serr))
+        error("the window could not take the terminal: " .. tostring(serr))
     end
 
     local done = session:done()

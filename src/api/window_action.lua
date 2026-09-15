@@ -34,7 +34,7 @@ local function handler()
     local topic = ACTIONS[action or ""]
     if not topic then
         res:set_status(http.STATUS.BAD_REQUEST)
-        res:write_json({success = false, error = "неизвестное действие: " .. tostring(action)})
+        res:write_json({success = false, error = "unknown action: " .. tostring(action)})
         return
     end
 

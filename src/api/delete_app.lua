@@ -25,14 +25,14 @@ local function handler()
     local name = req:param("name")
     if type(name) ~= "string" or name == "" then
         res:set_status(http.STATUS.BAD_REQUEST)
-        res:write_json({success = false, error = "имя окна не названо"})
+        res:write_json({success = false, error = "the window name is not given"})
         return
     end
 
     local existed, derr = repo.delete(name)
     if derr then
         res:set_status(http.STATUS.INTERNAL_ERROR)
-        res:write_json({success = false, error = "удаление строки: " .. tostring(derr)})
+        res:write_json({success = false, error = "deleting the row: " .. tostring(derr)})
         return
     end
 
@@ -48,7 +48,7 @@ local function handler()
         success = true,
         name = name,
         existed = existed == true,
-        note = "уже открытые окна этого вида продолжают работать до закрытия",
+        note = "windows of this kind that are already open keep working until closed",
     })
 end
 

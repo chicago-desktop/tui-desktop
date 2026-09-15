@@ -227,16 +227,16 @@ function chrome.menu(canvas, width: any, height: any, items, failure, open: any,
     end
     canvas:put(left, top + box_h - 1,
         styles.focused:render("╰" .. string.rep(BORDER.horizontal, span) .. "╯"), box_w)
-    canvas:put(left + 2, top, styles.title:render(type(anchor) == "table" and " значок " or " приложения "), box_w - 4)
+    canvas:put(left + 2, top, styles.title:render(type(anchor) == "table" and " icon " or " applications "), box_w - 4)
 
     local hits = {}
 
     if failure then
         -- Отказ реестра и пустой каталог выглядят одинаково, если не назвать
         -- причину: человек ищет ошибку в своём приложении, а её там нет.
-        canvas:put(left + 2, top + 2, styles.hint:render("каталог не прочитан: " .. tostring(failure)), span - 2)
+        canvas:put(left + 2, top + 2, styles.hint:render("catalog not read: " .. tostring(failure)), span - 2)
     elseif #items == 0 then
-        canvas:put(left + 2, top + 2, styles.hint:render("приложение не объявило ни одного окна"), span - 2)
+        canvas:put(left + 2, top + 2, styles.hint:render("the application declared no windows"), span - 2)
     else
         local at = math.tointeger(tonumber(cursor) or 1) or 1
         for index, item in ipairs(items) do
@@ -252,7 +252,7 @@ function chrome.menu(canvas, width: any, height: any, items, failure, open: any,
         end
     end
     canvas:put(left + 2, top + box_h - 1,
-        styles.hint:render(" стрелки — выбрать · enter — открыть · esc — закрыть "), span)
+        styles.hint:render(" arrows — select · enter — open · esc — close "), span)
     return hits
 end
 

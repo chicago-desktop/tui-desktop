@@ -15,7 +15,7 @@ local function main()
     local ok, err = library.run({
         chrome = chrome,
         service_name = "butschster.tui_desktop.desktop",
-        hint = "alt+n — окно с bash · alt+o — приложения · ctrl+q — выход",
+        hint = "alt+n — bash window · alt+o — applications · ctrl+q — quit",
     })
     return ok, err
 end
