@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: butschster.tui_desktop.desktop
+namespace: windows.tui_desktop.desktop
 
 entries:
   - name: input
@@ -22,9 +22,9 @@ entries:
     meta: {comment: "Bounded scrolling and shared scrollbar geometry."}
     source: file://scroll.lua
     imports:
-      geometry: butschster.tui_desktop.desktop:geometry
+      geometry: windows.tui_desktop.desktop:geometry
 
-  # butschster.tui_desktop.desktop:chrome
+  # windows.tui_desktop.desktop:chrome
   - name: chrome
     kind: library.lua
     meta:
@@ -33,28 +33,28 @@ entries:
     modules:
       - tty
 
-  # butschster.tui_desktop.desktop:programs
+  # windows.tui_desktop.desktop:programs
   - name: programs
     kind: library.lua
     meta:
       comment: Что запись реестра говорит о своей программе — тип окна и признак «показывать в меню». Чистые таблицы, ни одного вызова в рантайм.
     source: file://programs.lua
 
-  # butschster.tui_desktop.desktop:pixels
+  # windows.tui_desktop.desktop:pixels
   - name: pixels
     kind: library.lua
     meta:
       comment: Сборка пиксельного кадра — пробелы под картинками, разбор размещений и попаданий. Чистая арифметика, ни одного вызова в рантайм.
     source: file://pixels.lua
 
-  # butschster.tui_desktop.desktop:window_api
+  # windows.tui_desktop.desktop:window_api
   - name: window_api
     kind: library.lua
     meta:
       comment: Что окно может попросить у десктопа — открыть, закрыть, поднять соседнее окно. Имя композитора берётся из контекста процесса, а не из константы.
     source: file://window_api.lua
     imports:
-      input: butschster.tui_desktop.desktop:input
+      input: windows.tui_desktop.desktop:input
     modules:
       - process
       # Имя своего композитора окно читает отсюда. Модуль объявлен ЗДЕСЬ, а не
@@ -68,7 +68,7 @@ entries:
       - channel
       - time
 
-  # butschster.tui_desktop.desktop:library
+  # windows.tui_desktop.desktop:library
   #
   # Механика композитора без вида. Вторая оболочка зовёт её со своей темой:
   # так вид меняется, не копируя хостинг окон, PTY и командный канал.
@@ -88,15 +88,15 @@ entries:
       - time
       - tty
     imports:
-      repo: butschster.tui_desktop.persist:repo
-      apps: butschster.tui_desktop.persist:apps
-      programs: butschster.tui_desktop.desktop:programs
-      pixels: butschster.tui_desktop.desktop:pixels
+      repo: windows.tui_desktop.persist:repo
+      apps: windows.tui_desktop.persist:apps
+      programs: windows.tui_desktop.desktop:programs
+      pixels: windows.tui_desktop.desktop:pixels
       # Ради одного ключа: имя композитора кладётся окну в контекст под тем
       # же именем, под которым окно его читает.
-      window_api: butschster.tui_desktop.desktop:window_api
+      window_api: windows.tui_desktop.desktop:window_api
 
-  # butschster.tui_desktop.desktop:desktop
+  # windows.tui_desktop.desktop:desktop
   - name: desktop
     kind: process.lua
     meta:
@@ -105,12 +105,12 @@ entries:
         name: desktop
         short: Оконный десктоп в терминале
         security:
-          actor: {id: butschster.tui_desktop.desktop:desktop}
+          actor: {id: windows.tui_desktop.desktop:desktop}
           policies:
-            - butschster.tui_desktop.security:desktop_runtime
+            - windows.tui_desktop.security:desktop_runtime
             # Хранилище окон читает имя базы из окружения (persist:repo), и без
             # этого права оно молча берёт умолчание.
-            - butschster.tui_desktop.security:storage_env
+            - windows.tui_desktop.security:storage_env
     source: file://desktop.lua
     method: main
     modules:
@@ -124,10 +124,10 @@ entries:
       - time
       - tty
     imports:
-      library: butschster.tui_desktop.desktop:library
-      chrome: butschster.tui_desktop.desktop:chrome
+      library: windows.tui_desktop.desktop:library
+      chrome: windows.tui_desktop.desktop:chrome
 
-  # butschster.tui_desktop.desktop:window_pty
+  # windows.tui_desktop.desktop:window_pty
   - name: window_pty
     kind: process.lua
     meta:
@@ -152,4 +152,4 @@ entries:
       - exec
       - tty
     security:
-      policies: [butschster.tui_desktop.security:desktop_runtime]
+      policies: [windows.tui_desktop.security:desktop_runtime]

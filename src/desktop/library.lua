@@ -61,13 +61,13 @@ local function claim_desktop_name(family: string, slots: any): (any, any)
         .. " tried): " .. tostring(first_error)
 end
 
-local WINDOW_HOST = "butschster.tui_desktop:workers"
+local WINDOW_HOST = "windows.tui_desktop:workers"
 
 -- Окно — это любая запись процесса, которая умеет писать в свой tty-порт.
 -- Модуль знает ровно одну свою (программа под PTY); всё остальное приносит
 -- приложение и называет записью — иначе каждое новое окно требовало бы
 -- правки этого модуля.
-local PTY_WINDOW = "butschster.tui_desktop.desktop:window_pty"
+local PTY_WINDOW = "windows.tui_desktop.desktop:window_pty"
 
 -- Каталог окон приложения: записи, помеченные этим meta.type, композитор
 -- находит сам и показывает в меню по alt+o.
@@ -131,7 +131,7 @@ local TRAY_MAX = 6
 local TRAY_TEXT = 16
 local TRAY_KEY = 64
 
--- Desktop widgets (FR-006 in butschster/windows): registry entries whose
+-- Desktop widgets (FR-006 in windows/shell): registry entries whose
 -- process the compositor spawns like the state provider of a view window,
 -- and whose published tree the theme draws in a panel under every window.
 -- The base spawns, stops and hands the list to the theme; it draws nothing.
@@ -253,7 +253,7 @@ local function run(options: any)
     -- connection its own desktop.
     local SERVICE_FAMILY = type(options.service_name) == "string"
         and options.service_name ~= "" and options.service_name
-        or "butschster.tui_desktop.desktop"
+        or "windows.tui_desktop.desktop"
     local claimed, claim_error = claim_desktop_name(SERVICE_FAMILY, options.service_slots)
     if not claimed then return nil, claim_error end
     local SERVICE_NAME: string = tostring(claimed)

@@ -1,7 +1,7 @@
-# butschster/tui-desktop — initialize, verify, and publish a standalone Kickside module.
+# windows/tui-desktop — initialize, verify, and publish a standalone Kickside module.
 MODULE := tui-desktop
 TYPE   := plugin
-VIS    := private
+VIS    := public
 
 # pipefail lets the test targets both stream runner output and keep its exit
 # code while grepping the log afterwards.

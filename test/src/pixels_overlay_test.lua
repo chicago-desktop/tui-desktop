@@ -10,7 +10,7 @@ local function plain(row: any): string
 end
 
 local function define_tests()
-    test.describe("butschster.tui_desktop pixels.frame", function()
+    test.describe("windows.tui_desktop pixels.frame", function()
         test.it("blanks the cells under a picture, not under an overlay", function()
             local canvas = tty.canvas(20, 4)
             canvas:clear(" ")

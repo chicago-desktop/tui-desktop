@@ -1,6 +1,6 @@
-organization: butschster
+organization: windows
 module: tui-desktop
-description: Оконный менеджер для терминала — композитор с перекрывающимися окнами, окна с настоящими программами под PTY и командный канал, которым окнами управляет агент.
+description: A window manager for the terminal on the Wippy runtime — a compositor with overlapping windows, windows running real programs under a PTY, and a command channel through which an agent drives them.
 # Pick the license your distribution requires (kickside platform modules use BUSL-1.1).
 license: MIT
 repository: https://github.com/wippy-windows/tui-desktop

@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: butschster.tui_desktop
+namespace: windows.tui_desktop
 
 # Оконный десктоп в терминале.
 #
@@ -32,7 +32,7 @@ entries:
       comment: База, где хранятся окна, собранные в рантайме.
     default: app:db
     targets:
-      - entry: butschster.tui_desktop.migrations:01_create_windows
+      - entry: windows.tui_desktop.migrations:01_create_windows
         path: .meta.target_db
 
   - name: api_router
@@ -41,17 +41,17 @@ entries:
       comment: HTTP-роутер, к которому крепятся командный канал и мастерская. Обязан требовать аутентификацию и endpoint_firewall.
     default: app:api
     targets:
-      - entry: butschster.tui_desktop.api:list_windows.endpoint
+      - entry: windows.tui_desktop.api:list_windows.endpoint
         path: .meta.router
-      - entry: butschster.tui_desktop.api:open_window.endpoint
+      - entry: windows.tui_desktop.api:open_window.endpoint
         path: .meta.router
-      - entry: butschster.tui_desktop.api:create_app.endpoint
+      - entry: windows.tui_desktop.api:create_app.endpoint
         path: .meta.router
-      - entry: butschster.tui_desktop.api:list_apps.endpoint
+      - entry: windows.tui_desktop.api:list_apps.endpoint
         path: .meta.router
-      - entry: butschster.tui_desktop.api:delete_app.endpoint
+      - entry: windows.tui_desktop.api:delete_app.endpoint
         path: .meta.router
-      - entry: butschster.tui_desktop.api:window_action.endpoint
+      - entry: windows.tui_desktop.api:window_action.endpoint
         path: .meta.router
 
   # ─── Хосты ───────────────────────────────────────────────────────────

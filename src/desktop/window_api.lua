@@ -26,7 +26,7 @@ local CONTEXT_KEY = "tui_desktop.service"
 
 -- Запасное имя — штатная оболочка. Окно, запущенное старым композитором или
 -- чужим запуском, ведёт себя как раньше, а не падает.
-local DEFAULT_SERVICE = "butschster.tui_desktop.desktop"
+local DEFAULT_SERVICE = "windows.tui_desktop.desktop"
 
 -- Модуль объявляет ЭТА библиотека, а не запись окна: библиотека получает свои
 -- модули, поэтому окно, написанное до появления имени в контексте, работает

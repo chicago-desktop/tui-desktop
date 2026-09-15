@@ -17,7 +17,7 @@ local time = require("time")
 -- сам композитор. Топик ответа берётся оттуда, а не повторяется строкой.
 local window_api = require("window_api")
 
-local SERVICE_NAME = "butschster.tui_desktop.desktop"
+local SERVICE_NAME = "windows.tui_desktop.desktop"
 local REPLY_TOPIC = window_api.REPLY_TOPIC
 local BUDGET = "5s"
 
@@ -67,7 +67,7 @@ function control.call(topic, body)
     local pid, lerr = process.registry.lookup(SERVICE_NAME)
     if not pid then
         return nil, "the desktop is not running (" .. tostring(lerr)
-            .. "): start it with `wippy run --host butschster.tui_desktop:terminal desktop`"
+            .. "): start it with `wippy run --host windows.tui_desktop:terminal desktop`"
     end
 
     body = type(body) == "table" and body or {}

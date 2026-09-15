@@ -10,7 +10,7 @@ local process = require("process")
 local time = require("time")
 local tty = require("tty")
 
-local WATCHER = "butschster.tui_desktop.test.focus_watcher"
+local WATCHER = "windows.tui_desktop.test.focus_watcher"
 
 local function main(args)
     local name = tostring(args or "?")

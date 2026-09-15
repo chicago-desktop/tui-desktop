@@ -69,9 +69,9 @@ local function ask(desk: any, topic: string, body: any): any
 end
 
 local function define_tests()
-    test.describe("butschster.tui_desktop pointer motion", function()
+    test.describe("windows.tui_desktop pointer motion", function()
         test.it("plain motion reaches only the focused window's client, in client cells, once per cell", function()
-            local desk = boot("butschster.tui_desktop.test.motion")
+            local desk = boot("windows.tui_desktop.test.motion")
             local reports = process.listen("probe.event", {message = true})
             -- Mouse events from the window WITHOUT the focus: there must be none.
             local strays: any = {list = {}}

@@ -1,12 +1,12 @@
 version: "1.0"
-namespace: butschster.tui_desktop.security
+namespace: windows.tui_desktop.security
 
 # Права разделены на три, а не слиты в одну «всё можно»: композитору нужно
 # порождать процессы и запускать программы, командному каналу — только
 # найти композитор и заговорить с ним, а доступ к ручкам выдаёт приложение.
 
 entries:
-  # butschster.tui_desktop.security:desktop_runtime
+  # windows.tui_desktop.security:desktop_runtime
   - name: desktop_runtime
     kind: security.policy
     meta:
@@ -41,7 +41,7 @@ entries:
       resources: "*"
       effect: allow
 
-  # butschster.tui_desktop.security:storage_env
+  # windows.tui_desktop.security:storage_env
   #
   # Одна переменная, а не «*»: имя базы, где лежат окна, приложение может
   # переназначить. Право узкое нарочно — под этим же именем ходят токены, а
@@ -55,10 +55,10 @@ entries:
       actions:
         - env.get
       resources:
-        - BUTSCHSTER_TUI_DESKTOP_DB_ID
+        - TUI_DESKTOP_DB_ID
       effect: allow
 
-  # butschster.tui_desktop.security:desktop_command_channel
+  # windows.tui_desktop.security:desktop_command_channel
   - name: desktop_command_channel
     kind: security.policy
     meta:
@@ -71,7 +71,7 @@ entries:
       resources: "*"
       effect: allow
 
-  # butschster.tui_desktop.security:desktop_endpoint_access
+  # windows.tui_desktop.security:desktop_endpoint_access
   - name: desktop_endpoint_access
     kind: security.policy
     meta:
@@ -79,20 +79,20 @@ entries:
     groups: []
     policy:
       resources:
-        - butschster.tui_desktop.api:*
+        - windows.tui_desktop.api:*
       actions: access
       effect: allow
 
-  # butschster.tui_desktop.security:user_security_scope
+  # windows.tui_desktop.security:user_security_scope
   - name: user_security_scope
     kind: ns.requirement
     meta:
       comment: Группа безопасности приложения, которой открыт доступ к ручкам десктопа.
     targets:
-      - entry: butschster.tui_desktop.security:desktop_endpoint_access
+      - entry: windows.tui_desktop.security:desktop_endpoint_access
         path: ".groups +="
 
-  # butschster.tui_desktop.security:workshop_scope
+  # windows.tui_desktop.security:workshop_scope
   #
   # Мастерская и загрузчик: прочитать реестр, применить к нему версию,
   # прочитать и записать строку хранилища. Права порождать процессы и
@@ -112,7 +112,7 @@ entries:
       resources: "*"
       effect: allow
 
-  # butschster.tui_desktop.security:app_window_scope
+  # windows.tui_desktop.security:app_window_scope
   #
   # Окно, собранное в рантайме. Оно рисует себя и читает данные, но не
   # порождает процессов, не запускает программ и не меняет реестр: код окна

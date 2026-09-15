@@ -10,8 +10,8 @@ local json = require("json")
 
 -- Значение по умолчанию в коде, переопределяемое окружением: ресурс базы
 -- принадлежит приложению, а не модулю.
-local DB_ID = env.get("BUTSCHSTER_TUI_DESKTOP_DB_ID") or "app:db"
-local TABLE = "butschster_tui_desktop_windows"
+local DB_ID = env.get("TUI_DESKTOP_DB_ID") or "app:db"
+local TABLE = "windows_tui_desktop_windows"
 
 local repo = {}
 

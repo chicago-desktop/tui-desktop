@@ -1,6 +1,6 @@
 ---
 name: tui-desktop
-description: Управлять окнами живого десктопа butschster/tui-desktop через его командный канал — открыть окно с программой, напечатать в него, прочитать его экран, переставить или закрыть окно, поднять сам десктоп.
+description: Управлять окнами живого десктопа windows/tui-desktop через его командный канал — открыть окно с программой, напечатать в него, прочитать его экран, переставить или закрыть окно, поднять сам десктоп.
 ---
 
 # Управление десктопом
@@ -96,7 +96,7 @@ curl -s -H "$AUTH" -H 'Content-Type: application/json' -X POST \
 ## Поднять десктоп
 
 ```bash
-wippy run --host butschster.tui_desktop:terminal desktop
+wippy run --host windows.tui_desktop:terminal desktop
 ```
 
 `--host` обязателен: автодетект терминального хоста в CLI считает записи

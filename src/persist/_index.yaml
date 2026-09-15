@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: butschster.tui_desktop.persist
+namespace: windows.tui_desktop.persist
 
 # Хранилище окон, собранных в рантайме.
 #
@@ -10,7 +10,7 @@ namespace: butschster.tui_desktop.persist
 # работает под собственным актором, и права у него свои.
 
 entries:
-  # butschster.tui_desktop.persist:repo
+  # windows.tui_desktop.persist:repo
   - name: repo
     kind: library.lua
     meta:
@@ -21,7 +21,7 @@ entries:
       - env
       - json
 
-  # butschster.tui_desktop.persist:apps
+  # windows.tui_desktop.persist:apps
   - name: apps
     kind: library.lua
     meta:

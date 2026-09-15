@@ -16,7 +16,7 @@ return {main = main}
 ]]
 
 local function define_tests()
-    test.describe("butschster.tui_desktop storage", function()
+    test.describe("windows.tui_desktop storage", function()
         test.it("переживает круг сохранил — прочитал — удалил", function()
             repo.delete(NAME)
 
@@ -74,7 +74,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop app entries", function()
+    test.describe("windows.tui_desktop app entries", function()
         test.it("не пускает окну чужие модули", function()
             -- Отказ обязан называть модуль по имени: «окно не работает» без
             -- имени отправляет искать ошибку в коде окна.
@@ -102,7 +102,7 @@ local function define_tests()
                 source = "return {main = function() end}", modules = {},
             })
             test.eq((entry.data.imports or {}).desktop,
-                "butschster.tui_desktop.desktop:window_api",
+                "windows.tui_desktop.desktop:window_api",
                 "библиотека десктопа подключается каждому окну")
         end)
 
@@ -153,7 +153,7 @@ local function define_tests()
             test.eq(entry.meta.in_menu, false)
             test.eq(entry.meta.order, 5)
             test.eq(entry.meta.pixel_render, "some.module:render")
-            test.eq(entry.meta.pixel_state, "butschster.tui_desktop.apps:probe", "состояние вида публикует само окно")
+            test.eq(entry.meta.pixel_state, "windows.tui_desktop.apps:probe", "состояние вида публикует само окно")
             test.is_nil(entry.meta.stray)
             -- Без описания — запись как раньше.
             local plain = apps.build_entry({
@@ -192,13 +192,13 @@ local function define_tests()
                 name = "probe", title = "Проба", width = 30, height = 8,
                 source = SOURCE, modules = {"tty"},
             })
-            test.eq(entry.id, "butschster.tui_desktop.apps:probe")
+            test.eq(entry.id, "windows.tui_desktop.apps:probe")
             test.eq(entry.kind, "process.lua")
             test.eq(entry.meta.type, "tui_desktop.window")
             test.eq(entry.meta.title, "Проба")
             test.eq(entry.data.method, "main")
             test.eq(entry.data.security.policies[1],
-                "butschster.tui_desktop.security:app_window_scope")
+                "windows.tui_desktop.security:app_window_scope")
         end)
     end)
 end

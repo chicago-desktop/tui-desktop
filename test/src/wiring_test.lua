@@ -15,25 +15,25 @@ local pixels = require("pixels")
 local apps = require("apps")
 local window_api = require("window_api")
 
-local NS = "butschster.tui_desktop"
-local TERMINAL_ID = "butschster.tui_desktop:terminal"
-local WORKERS_ID = "butschster.tui_desktop:workers"
-local EXEC_ID = "butschster.tui_desktop:exec"
-local DESKTOP_ID = "butschster.tui_desktop.desktop:desktop"
-local LIBRARY_ID = "butschster.tui_desktop.desktop:library"
-local CHROME_ID = "butschster.tui_desktop.desktop:chrome"
-local WINDOW_ID = "butschster.tui_desktop.desktop:window_pty"
-local PROGRAMS_ID = "butschster.tui_desktop.desktop:programs"
-local WINDOW_API_ID = "butschster.tui_desktop.desktop:window_api"
-local CONTROL_ID = "butschster.tui_desktop.api:control"
-local RUNTIME_POLICY_ID = "butschster.tui_desktop.security:desktop_runtime"
-local CHANNEL_POLICY_ID = "butschster.tui_desktop.security:desktop_command_channel"
-local ACCESS_POLICY_ID = "butschster.tui_desktop.security:desktop_endpoint_access"
+local NS = "windows.tui_desktop"
+local TERMINAL_ID = "windows.tui_desktop:terminal"
+local WORKERS_ID = "windows.tui_desktop:workers"
+local EXEC_ID = "windows.tui_desktop:exec"
+local DESKTOP_ID = "windows.tui_desktop.desktop:desktop"
+local LIBRARY_ID = "windows.tui_desktop.desktop:library"
+local CHROME_ID = "windows.tui_desktop.desktop:chrome"
+local WINDOW_ID = "windows.tui_desktop.desktop:window_pty"
+local PROGRAMS_ID = "windows.tui_desktop.desktop:programs"
+local WINDOW_API_ID = "windows.tui_desktop.desktop:window_api"
+local CONTROL_ID = "windows.tui_desktop.api:control"
+local RUNTIME_POLICY_ID = "windows.tui_desktop.security:desktop_runtime"
+local CHANNEL_POLICY_ID = "windows.tui_desktop.security:desktop_command_channel"
+local ACCESS_POLICY_ID = "windows.tui_desktop.security:desktop_endpoint_access"
 
 local ENDPOINTS = {
-    {id = "butschster.tui_desktop.api:list_windows", method = "GET", path = "/tui-desktop/windows"},
-    {id = "butschster.tui_desktop.api:open_window", method = "POST", path = "/tui-desktop/windows"},
-    {id = "butschster.tui_desktop.api:window_action", method = "POST", path = "/tui-desktop/windows/{id}/{action}"},
+    {id = "windows.tui_desktop.api:list_windows", method = "GET", path = "/tui-desktop/windows"},
+    {id = "windows.tui_desktop.api:open_window", method = "POST", path = "/tui-desktop/windows"},
+    {id = "windows.tui_desktop.api:window_action", method = "POST", path = "/tui-desktop/windows/{id}/{action}"},
 }
 
 local function get(id)
@@ -114,7 +114,7 @@ end
 -- который ждёт ответ в inbox, прочитает её первой и выбросит.
 local function play_composer(mode)
     local inbox = process.inbox()
-    local service = "butschster.tui_desktop.test.composer"
+    local service = "windows.tui_desktop.test.composer"
     process.registry.register(service)
 
     local context: {string: any} = {}
@@ -388,7 +388,7 @@ end
 local function granted_actions(policy_ids: any)
     local granted = {}
     for _, id in ipairs(policy_ids) do
-        local policy = registry.get(qualify(id, "butschster.tui_desktop.security"))
+        local policy = registry.get(qualify(id, "windows.tui_desktop.security"))
         if policy then
             for _, action in ipairs(actions_of(policy)) do granted[action] = true end
         end
@@ -397,7 +397,7 @@ local function granted_actions(policy_ids: any)
 end
 
 local function define_tests()
-    test.describe("butschster.tui_desktop hosts", function()
+    test.describe("windows.tui_desktop hosts", function()
         test.it("глушит лог на терминальном хосте", function()
             -- Без этого строка лога рантайма разъезжает кадр насовсем:
             -- диффер поверхности считает себя единственным писателем.
@@ -417,7 +417,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop processes", function()
+    test.describe("windows.tui_desktop processes", function()
         test.it("отдаёт композитор командой с собственным актором", function()
             local entry = get(DESKTOP_ID)
             local command = meta_of(entry).command or {}
@@ -426,7 +426,7 @@ local function define_tests()
 
             local data = data_of(entry)
             test.eq(data.method, "main")
-            test.eq(qualify((data.imports or {}).chrome, "butschster.tui_desktop.desktop"), CHROME_ID)
+            test.eq(qualify((data.imports or {}).chrome, "windows.tui_desktop.desktop"), CHROME_ID)
             test.is_true(has(data.modules or {}, "tty"), "композитору нужен модуль tty")
             test.is_true(has(data.modules or {}, "process"), "композитору нужен модуль process")
         end)
@@ -449,13 +449,13 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop command channel", function()
+    test.describe("windows.tui_desktop command channel", function()
         test.it("сводит каждую ручку с её обработчиком на роутере приложения", function()
             for _, expected in ipairs(ENDPOINTS) do
                 get(expected.id)
                 local endpoint = get(expected.id .. ".endpoint")
                 local data = data_of(endpoint)
-                test.eq(qualify(data.func, "butschster.tui_desktop.api"), expected.id)
+                test.eq(qualify(data.func, "windows.tui_desktop.api"), expected.id)
                 test.eq(data.method, expected.method)
                 test.eq(data.path, expected.path)
                 test.eq(meta_of(endpoint).router, "app:api")
@@ -496,10 +496,10 @@ local function define_tests()
             test.is_true(has(data.modules or {}, "sql"),
                 "композитору нужен sql, чтобы прочитать хранилище")
             local imports = data.imports or {}
-            test.eq(qualify(imports.repo, "butschster.tui_desktop.persist"),
-                "butschster.tui_desktop.persist:repo")
-            test.eq(qualify(imports.apps, "butschster.tui_desktop.persist"),
-                "butschster.tui_desktop.persist:apps")
+            test.eq(qualify(imports.repo, "windows.tui_desktop.persist"),
+                "windows.tui_desktop.persist:repo")
+            test.eq(qualify(imports.apps, "windows.tui_desktop.persist"),
+                "windows.tui_desktop.persist:apps")
         end)
 
         test.it("держит вид отдельно от механики окон", function()
@@ -514,11 +514,11 @@ local function define_tests()
 
             local shell = data_of(get(DESKTOP_ID))
             local imports = shell.imports or {}
-            test.eq(qualify(imports.library, "butschster.tui_desktop.desktop"),
-                "butschster.tui_desktop.desktop:library",
+            test.eq(qualify(imports.library, "windows.tui_desktop.desktop"),
+                "windows.tui_desktop.desktop:library",
                 "оболочка зовёт механику")
-            test.eq(qualify(imports.chrome, "butschster.tui_desktop.desktop"),
-                "butschster.tui_desktop.desktop:chrome",
+            test.eq(qualify(imports.chrome, "windows.tui_desktop.desktop"),
+                "windows.tui_desktop.desktop:chrome",
                 "оболочка выбирает тему")
         end)
 
@@ -527,7 +527,7 @@ local function define_tests()
             -- своего запуска процессов и программ у него нет. Код окна
             -- приходит по HTTP, и эта граница отделяет «попросить десктоп» от
             -- «сделать что угодно».
-            local actions = actions_of(get("butschster.tui_desktop.security:app_window_scope"))
+            local actions = actions_of(get("windows.tui_desktop.security:app_window_scope"))
             test.is_true(has(actions, "process.send"), "окно должно уметь послать команду")
             test.is_true(has(actions, "process.registry"), "и найти адресата")
             test.is_false(has(actions, "process.spawn"), "порождать процессы окно не может")
@@ -541,18 +541,18 @@ local function define_tests()
             local resources = policy.policy and policy.policy.resources
             test.not_nil(resources, "policy must list resources")
             if type(resources) == "string" then resources = {resources} end
-            test.is_true(has(resources, "butschster.tui_desktop.api:*"),
-                "policy must cover butschster.tui_desktop.api:*")
+            test.is_true(has(resources, "windows.tui_desktop.api:*"),
+                "policy must cover windows.tui_desktop.api:*")
         end)
     end)
 
-    test.describe("butschster.tui_desktop имя композитора", function()
+    test.describe("windows.tui_desktop имя композитора", function()
         test.it("окно узнаёт имя своего композитора при запуске", function()
             -- Константа здесь была дефектом: под второй оболочкой композитор
             -- зарегистрирован своим именем, и окно обращалось к чужому
             -- (несуществующему) процессу. Молча — `api.open` ответа не ждёт.
-            local body = ask_probe("app:window_probe", "butschster.windows:shell")
-            test.eq(body.name, "butschster.windows:shell")
+            local body = ask_probe("app:window_probe", "windows.shell:shell")
+            test.eq(body.name, "windows.shell:shell")
             test.eq(body.source, "context")
         end)
 
@@ -562,8 +562,8 @@ local function define_tests()
             -- окна из мастерской (у неё узкий белый список) получают имя без
             -- единой правки. Измерено, а не выведено: обратное означало бы,
             -- что починка чинит только новые окна.
-            local body = ask_probe("app:window_probe_bare", "butschster.windows:shell")
-            test.eq(body.name, "butschster.windows:shell")
+            local body = ask_probe("app:window_probe_bare", "windows.shell:shell")
+            test.eq(body.name, "windows.shell:shell")
             test.eq(body.source, "context")
         end)
 
@@ -582,7 +582,7 @@ local function define_tests()
             -- чинится. Поэтому композитор импортирует протокол окна, а не
             -- повторяет строку.
             local imports = data_of(get(LIBRARY_ID)).imports or {}
-            test.eq(qualify(imports.window_api, "butschster.tui_desktop.desktop"), WINDOW_API_ID,
+            test.eq(qualify(imports.window_api, "windows.tui_desktop.desktop"), WINDOW_API_ID,
                 "механика обязана брать ключ контекста у протокола окна")
 
             local api = data_of(get(WINDOW_API_ID))
@@ -591,7 +591,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop ожидание ответа в окне", function()
+    test.describe("windows.tui_desktop ожидание ответа в окне", function()
         test.it("окно дожидается ответа, не потеряв команду композитора", function()
             -- Команда послана, пока окно ждало. Рантайм её не теряет: она
             -- ждёт в очереди процесса, пока окно не вернётся к своему циклу.
@@ -615,10 +615,10 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop диалог принадлежит окну", function()
+    test.describe("windows.tui_desktop диалог принадлежит окну", function()
         test.it("диалог помнит своё окно и уходит вместе с ним, а соседняя программа остаётся", function()
-            local service = "butschster.tui_desktop.test.desktop"
-            local watcher = "butschster.tui_desktop.test.watcher"
+            local service = "windows.tui_desktop.test.desktop"
+            local watcher = "windows.tui_desktop.test.watcher"
             local inbox = process.inbox()
             local box = mailbox(inbox)
             process.registry.register(watcher)
@@ -682,12 +682,12 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop область уведомлений", function()
+    test.describe("windows.tui_desktop область уведомлений", function()
         -- Трей проверяется командным каналом, как его и зовут поставщики:
         -- сервис приложения шлёт `desktop.tray`, а `desktop.list` — то место,
         -- где «пункт не принят» отличается от «принят, но не нарисован».
         test.it("кладёт, обновляет, снимает и сам убирает протухшие пункты, называя каждый отказ", function()
-            local service = "butschster.tui_desktop.test.tray"
+            local service = "windows.tui_desktop.test.tray"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -756,12 +756,12 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop порядок окон и фокус", function()
+    test.describe("windows.tui_desktop порядок окон и фокус", function()
         -- Композитор здесь настоящий, экран — viewport теста, а щелчки едут в
         -- него настоящими событиями мыши. Раньше весь этот класс проверок
         -- считался доступным только глазом через пробник.
         test.it("щелчок поднимает окно, закрытие верхнего отдаёт фокус соседу", function()
-            local service = "butschster.tui_desktop.test.zorder"
+            local service = "windows.tui_desktop.test.zorder"
             local inbox = process.inbox()
             local box = mailbox(inbox)
             local desk = boot_composer(service)
@@ -844,8 +844,8 @@ local function define_tests()
             -- Окно шлёт команды без обратного адреса, чтобы не морозить кадр.
             -- Раньше отказ на такую команду окно не узнавало никогда: строка
             -- состояния — человеку, лог — потом, а отправителю ничего.
-            local service = "butschster.tui_desktop.test.refusal"
-            local watcher = "butschster.tui_desktop.test.refusal.watcher"
+            local service = "windows.tui_desktop.test.refusal"
+            local watcher = "windows.tui_desktop.test.refusal.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_composer(service)
@@ -881,7 +881,7 @@ local function define_tests()
             -- У командного канала обратный адрес есть, и ему отказ приходит
             -- ответом. Проверка парная к строке состояния: там отказ виден
             -- человеку, здесь — спросившему.
-            local service = "butschster.tui_desktop.test.missing"
+            local service = "windows.tui_desktop.test.missing"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -907,16 +907,16 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop пиксельный хром", function()
+    test.describe("windows.tui_desktop пиксельный хром", function()
         test.it("без размера ячейки режим не включается и называет причину", function()
             -- Догадка «8×16» права достаточно часто, чтобы выглядеть верной, и
             -- неверна достаточно часто, чтобы её приняли за ошибку рисования.
-            local watcher = "butschster.tui_desktop.test.pixels.watcher"
+            local watcher = "windows.tui_desktop.test.pixels.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
 
             local silent = spawn_pixel_composer(
-                "butschster.tui_desktop.test.pixels.silent", watcher, "silent")
+                "windows.tui_desktop.test.pixels.silent", watcher, "silent")
             local told = box.take("composer.refused")
             test.is_true(tostring(told.error):find("does not start", 1, true) ~= nil,
                 "отказ обязан называться отказом: " .. tostring(told.error))
@@ -926,7 +926,7 @@ local function define_tests()
 
             -- И оболочка, которая вовсе не дала, чем спросить.
             local mute = spawn_pixel_composer(
-                "butschster.tui_desktop.test.pixels.mute", watcher, "nothing")
+                "windows.tui_desktop.test.pixels.mute", watcher, "nothing")
             local second = box.take("composer.refused")
             test.is_true(tostring(second.error):find("cell_size", 1, true) ~= nil,
                 "отказ обязан называть, чего не хватило: " .. tostring(second.error))
@@ -934,7 +934,7 @@ local function define_tests()
 
             -- И тема, которая рисовать растрами не умеет.
             local plain = spawn_pixel_composer(
-                "butschster.tui_desktop.test.pixels.cells", watcher, "cells_theme")
+                "windows.tui_desktop.test.pixels.cells", watcher, "cells_theme")
             local third = box.take("composer.refused")
             test.is_true(tostring(third.error):find("chrome.paint", 1, true) ~= nil,
                 "отказ обязан называть, чего нет у темы: " .. tostring(third.error))
@@ -949,8 +949,8 @@ local function define_tests()
             -- доехавшая, даёт щелчок в пустоту — снаружи это неотличимо от
             -- «мышь не работает», и искать будут где угодно, кроме формы
             -- ответа темы.
-            local service = "butschster.tui_desktop.test.pixels.hits"
-            local watcher = "butschster.tui_desktop.test.pixels.hits.watcher"
+            local service = "windows.tui_desktop.test.pixels.hits"
+            local watcher = "windows.tui_desktop.test.pixels.hits.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1049,8 +1049,8 @@ local function define_tests()
             -- Цифровых сокращений в меню больше нет: клавиатурный путь, не
             -- видный в интерфейсе, заводить нельзя. Значит стрелки обязаны
             -- работать — и работать по РАЗМЕТКЕ, а не по каталогу.
-            local service = "butschster.tui_desktop.test.pixels.keys"
-            local watcher = "butschster.tui_desktop.test.pixels.keys.watcher"
+            local service = "windows.tui_desktop.test.pixels.keys"
+            local watcher = "windows.tui_desktop.test.pixels.keys.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1157,8 +1157,8 @@ local function define_tests()
             -- под указателем выделена, а папка под ним раскрывается сама.
             -- Проверяется ПОЛЕМ `menu_cursor`: «наведение не выделило» и
             -- «выделило, а тема не нарисовала» на экране одинаковы.
-            local service = "butschster.tui_desktop.test.pixels.hover"
-            local watcher = "butschster.tui_desktop.test.pixels.hover.watcher"
+            local service = "windows.tui_desktop.test.pixels.hover"
+            local watcher = "windows.tui_desktop.test.pixels.hover.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1220,8 +1220,8 @@ local function define_tests()
         end)
 
         test.it("правая кнопка по значку открывает контекстное меню у указателя, esc закрывает", function()
-            local service = "butschster.tui_desktop.test.pixels.context"
-            local watcher = "butschster.tui_desktop.test.pixels.context.watcher"
+            local service = "windows.tui_desktop.test.pixels.context"
+            local watcher = "windows.tui_desktop.test.pixels.context.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1293,8 +1293,8 @@ local function define_tests()
             -- Значки лежат сеткой два на два; у каждого ДВЕ строки попаданий,
             -- как у настоящей темы с подписью. Стрелка вниз обязана уйти на
             -- соседний значок, а не на подпись того же.
-            local service = "butschster.tui_desktop.test.pixels.icons"
-            local watcher = "butschster.tui_desktop.test.pixels.icons.watcher"
+            local service = "windows.tui_desktop.test.pixels.icons"
+            local watcher = "windows.tui_desktop.test.pixels.icons.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1357,8 +1357,8 @@ local function define_tests()
             -- терминального хоста заглушён, поэтому жалоба, рассказанная
             -- только ему, не рассказана никому. Значит она обязана быть в
             -- строке состояния — единственном месте, которое человек видит.
-            local service = "butschster.tui_desktop.test.pixels.flat"
-            local watcher = "butschster.tui_desktop.test.pixels.flat.watcher"
+            local service = "windows.tui_desktop.test.pixels.flat"
+            local watcher = "windows.tui_desktop.test.pixels.flat.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "flat")
@@ -1393,8 +1393,8 @@ local function define_tests()
         end)
 
         test.it("хром картинками, содержимое символами, под картинками пробелы", function()
-            local service = "butschster.tui_desktop.test.pixels.live"
-            local watcher = "butschster.tui_desktop.test.pixels.live.watcher"
+            local service = "windows.tui_desktop.test.pixels.live"
+            local watcher = "windows.tui_desktop.test.pixels.live.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1476,12 +1476,12 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop цена кадра временем", function()
+    test.describe("windows.tui_desktop цена кадра временем", function()
         -- «Тормозит» без цифр не чинится: сначала мерить. Байты и строки
         -- говорят, сколько ушло в терминал, но не где прошло время, и спор
         -- «пересборка в Lua или present» решался бы на глаз.
         test.it("статус несёт время кадра, его причину и сводку по последним кадрам", function()
-            local service = "butschster.tui_desktop.test.frame_time"
+            local service = "windows.tui_desktop.test.frame_time"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -1543,7 +1543,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop права под объявленные модули", function()
+    test.describe("windows.tui_desktop права под объявленные модули", function()
         test.it("на каждый модуль, закрытый правами, право выдано", function()
             -- Этот класс стоил здесь трёх часов и выглядел как четыре разные
             -- проблемы подряд: композитор объявлял `env`, права на него не
@@ -1555,7 +1555,7 @@ local function define_tests()
             for _, found in ipairs(entries :: {any}) do
                 local entry: any = found
                 local id = tostring(entry.id)
-                if id:find("butschster.tui_desktop", 1, true) == 1 then
+                if id:find("windows.tui_desktop", 1, true) == 1 then
                     local policy_ids = policies_of(entry)
                     local modules = data_of(entry).modules
                     if policy_ids and type(modules) == "table" then
@@ -1582,7 +1582,7 @@ local function define_tests()
             -- У собранного окна политика одна и известна заранее, поэтому
             -- правило проверяется прямо на белом списке: модуль, который окно
             -- вправе попросить, обязан быть открыт этой политикой.
-            local granted = granted_actions({"butschster.tui_desktop.security:app_window_scope"})
+            local granted = granted_actions({"windows.tui_desktop.security:app_window_scope"})
             for _, gate in ipairs(GATED_MODULES) do
                 if apps.ALLOWED_MODULES[gate.module] then
                     local ok = false
@@ -1601,7 +1601,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop сборка пиксельного кадра", function()
+    test.describe("windows.tui_desktop сборка пиксельного кадра", function()
         -- Арифметика без терминала и без графики: сюда приезжает то, что
         -- вернула тема, и здесь решается, попадёт ли оно в кадр.
         -- Канва-свидетель: записывает вызовы вместо рисования. Одной
@@ -1734,13 +1734,13 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop стрелки в режиме символов", function()
+    test.describe("windows.tui_desktop стрелки в режиме символов", function()
         test.it("курсор меню доезжает до темы и в ячейках, а не только в пикселях", function()
             -- Режим, который не проверили, — тот, в котором стрелки двигают
             -- НЕВИДИМОЕ: человек нажимает, что-то меняется, и он не видит где.
             -- Поэтому тот же путь проверяется у штатной темы, где курсор
             -- приезжает седьмым аргументом chrome.menu.
-            local service = "butschster.tui_desktop.test.keys.cells"
+            local service = "windows.tui_desktop.test.keys.cells"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -1784,11 +1784,11 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop масштаб пиксельной темы", function()
+    test.describe("windows.tui_desktop масштаб пиксельной темы", function()
         test.it("смена размера ячейки обновляет кадр и клиент даже при прежней сетке", function()
-            local service = "butschster.tui_desktop.test.pixels.zoom"
+            local service = "windows.tui_desktop.test.pixels.zoom"
             local watcher = service .. ".watcher"
-            local provider = "butschster.tui_desktop.test.provider"
+            local provider = "windows.tui_desktop.test.provider"
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "zoom")
             tell_desktop(service, "desktop.open",
@@ -1830,10 +1830,10 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop отступы пиксельной темы", function()
+    test.describe("windows.tui_desktop отступы пиксельной темы", function()
         test.it("фон рисуется до содержимого, а мышь отсчитывается от viewport", function()
-            local service = "butschster.tui_desktop.test.pixels.insets"
-            local provider = "butschster.tui_desktop.test.provider"
+            local service = "windows.tui_desktop.test.pixels.insets"
+            local provider = "windows.tui_desktop.test.provider"
             local watcher = service .. ".watcher"
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "insets")
@@ -1888,10 +1888,10 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop окно-вид без процесса", function()
+    test.describe("windows.tui_desktop окно-вид без процесса", function()
         test.it("вид ждёт своего поставщика, а не показывает пустоту молча", function()
-            local service = "butschster.tui_desktop.test.view"
-            local provider = "butschster.tui_desktop.test.provider"
+            local service = "windows.tui_desktop.test.view"
+            local provider = "windows.tui_desktop.test.provider"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -1996,8 +1996,8 @@ local function define_tests()
         test.it("смерть поставщика возвращает вид в ожидание, а не оставляет вчерашнее", function()
             -- Вид, застывший на последнем состоянии, выглядит живым и врёт тем
             -- убедительнее, чем дольше висит.
-            local service = "butschster.tui_desktop.test.view.orphan"
-            local provider = "butschster.tui_desktop.test.provider"
+            local service = "windows.tui_desktop.test.view.orphan"
+            local provider = "windows.tui_desktop.test.provider"
             local desk = boot_composer(service)
 
             tell_desktop(service, "desktop.open", {entry = "app:view_window"})
@@ -2041,7 +2041,7 @@ local function define_tests()
             -- У окна с процессом размер меняется вместе с viewport'ом, у вида
             -- viewport'а нет вовсе — и путь, который этого не знает, роняет
             -- композитор на первой же команде resize.
-            local service = "butschster.tui_desktop.test.view.resize"
+            local service = "windows.tui_desktop.test.view.resize"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -2065,7 +2065,7 @@ local function define_tests()
         test.it("вид, который нечем нарисовать, не открывается и говорит почему", function()
             -- Мёртвая ссылка на отрисовку молчит до первого открытия, а потом
             -- выглядит пустым окном — то есть виновата будет тема.
-            local service = "butschster.tui_desktop.test.view.broken"
+            local service = "windows.tui_desktop.test.view.broken"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -2097,7 +2097,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("butschster.tui_desktop тип окна и меню", function()
+    test.describe("windows.tui_desktop тип окна и меню", function()
         test.it("прячет из меню запись с in_menu: false, не переставая её открывать", function()
             -- Признак про меню, а не про запуск: просмотрщик файла или диалог
             -- свойств открывается из другого окна и с рабочего стола.
@@ -2150,8 +2150,8 @@ local function define_tests()
     end)
     test.describe("taskbar launch and shell exit", function()
         test.it("raises one clock window and closes its provider through the Start menu", function()
-            local service = "butschster.tui_desktop.test.actions"
-            local provider = "butschster.tui_desktop.test.provider"
+            local service = "windows.tui_desktop.test.actions"
+            local provider = "windows.tui_desktop.test.provider"
             local watcher = service .. ".watcher"
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "actions")
@@ -2187,7 +2187,7 @@ local function define_tests()
 
         test.it("exits by Enter on the menu action and by Ctrl+Q with the menu open", function()
             for _, method in ipairs({"enter", "ctrlq"}) do
-                local service = "butschster.tui_desktop.test.quit." .. method
+                local service = "windows.tui_desktop.test.quit." .. method
                 local watcher = service .. ".watcher"
                 process.registry.register(watcher)
                 local desk = boot_pixel_composer(service, watcher, "actions")

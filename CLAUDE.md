@@ -21,7 +21,7 @@ requirements.
 cd test && python3 ../tools/tui-probe.py \
     --cols 100 --rows 26 --boot 60 --settle 3 \
     --send $'\033n' --send 'echo ok' --send-key enter --expect 'ok' \
-    -- wippy run --host butschster.tui_desktop:terminal desktop
+    -- wippy run --host windows.tui_desktop:terminal desktop
 ```
 
 `--boot` брать не меньше 60 секунд: до первого кадра поднимается весь рантайм.

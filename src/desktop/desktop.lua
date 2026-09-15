@@ -14,7 +14,7 @@ local function main()
     -- выполняется вовсе — молча, за 0 мс.
     local ok, err = library.run({
         chrome = chrome,
-        service_name = "butschster.tui_desktop.desktop",
+        service_name = "windows.tui_desktop.desktop",
         hint = "alt+n — bash window · alt+o — applications · ctrl+q — quit",
     })
     return ok, err

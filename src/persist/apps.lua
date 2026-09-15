@@ -9,9 +9,9 @@ local registry = require("registry")
 
 local apps = {}
 
-apps.NAMESPACE = "butschster.tui_desktop.apps"
+apps.NAMESPACE = "windows.tui_desktop.apps"
 apps.WINDOW_TYPE = "tui_desktop.window"
-apps.POLICY = "butschster.tui_desktop.security:app_window_scope"
+apps.POLICY = "windows.tui_desktop.security:app_window_scope"
 
 -- Что окну можно требовать. Список узкий нарочно: окно рисует себя и читает
 -- данные, но не порождает процессов и не ходит наружу.
@@ -36,7 +36,7 @@ apps.DEFAULT_MODULES = {"channel", "time", "tty"}
 
 -- Библиотека десктопа подключается каждому окну под этим именем; занять его
 -- своим импортом нельзя.
-apps.DESKTOP_IMPORT = "butschster.tui_desktop.desktop:window_api"
+apps.DESKTOP_IMPORT = "windows.tui_desktop.desktop:window_api"
 apps.WINDOW_TYPES = {app = true, dialog = true, tool = true}
 
 -- Описание окна сверх кода — то, что у записи из файла лежит в meta и
@@ -194,7 +194,7 @@ function apps.build_entry(window)
         title = window.title,
         width = window.width,
         height = window.height,
-        comment = "Built in the runtime; the source is stored in butschster_tui_desktop_windows.",
+        comment = "Built in the runtime; the source is stored in windows_tui_desktop_windows.",
     }
     -- Папка меню — как у записи из файла, тем же полем. Пустая не пишется
     -- вовсе: «не названа» и «названа пустой» для оболочки разные ответы,

@@ -1,8 +1,8 @@
-# butschster/tui-desktop
+# windows/tui-desktop
 
-Общий контракт окон: [SDK оболочки Windows](https://github.com/butschster/windows/blob/main/docs/sdk.md).
+Общий контракт окон: [SDK оболочки Windows](https://github.com/wippy-windows/windows/blob/main/docs/sdk.md).
 В основе находятся `window_api`, `geometry`, `input` и `scroll`; готовые
-декларативные компоненты и навык — в модуле `butschster/windows`.
+декларативные компоненты и навык — в модуле `windows/shell`.
 
 
 Оконный менеджер для терминала на рантайме Wippy.
@@ -26,7 +26,7 @@
 проще.
 
 - Часть: **Механика**; Что это: `…desktop:library` — одна функция `run(options)`: окна в z-порядке, ввод, хит-тест, командный канал, хостинг процессов; Кто её пишет: этот модуль
-- Часть: **Оболочка**; Что это: процесс, который зовёт `run` со своей темой, каталогом и раскладкой стола; Кто её пишет: приложение; здесь их две — штатная и Windows 95 в `butschster/windows`
+- Часть: **Оболочка**; Что это: процесс, который зовёт `run` со своей темой, каталогом и раскладкой стола; Кто её пишет: приложение; здесь их две — штатная и Windows 95 в `windows/shell`
 - Часть: **Тема**; Что это: чистые функции рисования: рамки, полосы, меню, значки. Возвращает разметку попаданий; Кто её пишет: оболочка
 - Часть: **Окно**; Что это: запись реестра. Обычно процесс, который пишет в свой viewport и не знает, что он окно; бывает и вид без процесса; Кто её пишет: приложение
 
@@ -61,7 +61,7 @@
 ## Запуск
 
 ```bash
-wippy run --host butschster.tui_desktop:terminal desktop
+wippy run --host windows.tui_desktop:terminal desktop
 ```
 
 `--host` здесь обязателен, и это не придирка: автодетект терминального хоста в
@@ -84,8 +84,8 @@ CLI — просто подсчёт записей `terminal.host` во всём
 
 ```yaml
 override:
-  "butschster.tui_desktop:exec:default_env.HOME": "${env:HOME}"
-  "butschster.tui_desktop:exec:default_env.PATH": "${env:PATH}"
+  "windows.tui_desktop:exec:default_env.HOME": "${env:HOME}"
+  "windows.tui_desktop:exec:default_env.PATH": "${env:PATH}"
 ```
 
 Это значения окружения процесса, запускающего Wippy; имена пользователей
@@ -147,7 +147,7 @@ the handle.
 
 Мастерская — окна, собранные на ходу:
 
-- `POST /tui-desktop/apps` — собрать окно: `name`, `source`, `title`, `width`, `height`, `modules`, `group` (папка меню, как `meta.group` у записи из файла; пусто — папку выбирает оболочка). Сверх кода — те же поля, что у записи из файла: `imports` (`{имя = id библиотеки}`, имя `desktop` занято), `pixel_render` (библиотека пиксельного вида; `pixel_state` — само окно), `image`, `icon`, `window_type` (`app | dialog | tool`), `resizable`, `in_menu`, `order`. Так в мастерской собирается окно на SDK оболочки: `imports = {app = "butschster.windows.sdk:app"}`, `pixel_render = "butschster.windows.sdk:render"`. Мёртвый импорт и не-библиотека отклоняются по имени поля
+- `POST /tui-desktop/apps` — собрать окно: `name`, `source`, `title`, `width`, `height`, `modules`, `group` (папка меню, как `meta.group` у записи из файла; пусто — папку выбирает оболочка). Сверх кода — те же поля, что у записи из файла: `imports` (`{имя = id библиотеки}`, имя `desktop` занято), `pixel_render` (библиотека пиксельного вида; `pixel_state` — само окно), `image`, `icon`, `window_type` (`app | dialog | tool`), `resizable`, `in_menu`, `order`. Так в мастерской собирается окно на SDK оболочки: `imports = {app = "windows.shell.sdk:app"}`, `pixel_render = "windows.shell.sdk:render"`. Мёртвый импорт и не-библиотека отклоняются по имени поля
 - `GET /tui-desktop/apps` — сохранённые окна и признак `live` (есть ли запись в реестре сейчас)
 - команда `desktop.tray` `{key, text, entry?, title?, ttl?}` командного канала — пункт области уведомлений у часов; тот же `key` обновляет, `{key, remove: true}` снимает. Не больше 6 пунктов и 16 знаков в подписи. Пункт, не обновлённый за `ttl` секунд, композитор снимает сам. Щелчок по пункту открывает `entry` или поднимает уже открытое окно — как щелчок по часам. Из Lua — `window_api.tray(spec, service?)`; `desktop.list` отдаёт `tray` с владельцем и остатком срока
 - command `desktop.refresh` of the command channel also brings the desktop widgets in line with `options.widgets`: new entries are spawned, vanished ones stopped, stopped ones spawned again; `desktop.list` returns `widgets` — `{id, entry, title, opens, w, h, revision, waiting, stopped}` each, without the tree. See "Desktop widgets"
@@ -254,7 +254,7 @@ curl -X POST -H 'Content-Type: application/json' \
   http://localhost:8099/api/v1/tui-desktop/apps
 ```
 
-Исходник при этом ложится в таблицу `butschster_tui_desktop_windows`, и на
+Исходник при этом ложится в таблицу `windows_tui_desktop_windows`, и на
 старте композитор возвращает сохранённые окна в реестр. Без этого собранное
 окно жило бы ровно до конца процесса.
 
@@ -316,7 +316,7 @@ curl -X POST -H 'Content-Type: application/json' \
   неё узкий белый список) получают имя без единой правки. Проверено тестом на
   живом запуске, а не выведено.
 - **Окно, запущенное без имени, работает как раньше** — берёт штатное
-  `butschster.tui_desktop.desktop`.
+  `windows.tui_desktop.desktop`.
 - **Отказ называет причину и уходит в лог.** «Десктоп такой-то не отвечает;
   имя композитора не пришло при запуске» — во втором возвращаемом значении и
   строкой в логе: `open` ответа не ждёт, и окно, не проверившее возврат, иначе
@@ -485,8 +485,8 @@ local dialog, err = desktop.dialog({entry = "app.desktop:props", title = "Сво
 meta:
   type: tui_desktop.window
   window_content: pixels                        # cells (по умолчанию) | pixels
-  render: butschster.windows.explorer:render_pixels # чистая библиотека отрисовки
-  state:  butschster.windows.explorer:state     # процесс-поставщик, свой актор
+  render: windows.shell.explorer:render_pixels # чистая библиотека отрисовки
+  state:  windows.shell.explorer:state     # процесс-поставщик, свой актор
 ```
 
 `pixels` означает, что **процесса внутри нет**: рисует тема, зовя `render`,
@@ -543,7 +543,7 @@ picture the window has — a folder window that navigates in place changes both.
 
 ## Вид отделён от механики: контракт темы
 
-Композитор — библиотека `butschster.tui_desktop.desktop:library` с одной
+Композитор — библиотека `windows.tui_desktop.desktop:library` с одной
 функцией `run(options)`. Всё, что рисуется, приходит темой в `options.chrome`;
 геометрию хрома — сколько строк занято сверху и снизу — тоже объявляет она.
 Штатная оболочка (`…:desktop`) зовёт `run` со своей темой; вторая оболочка
@@ -698,7 +698,7 @@ While the Start menu is open the pointer is the menu's.
 
 ## Desktop widgets
 
-A desktop widget (FR-006 in `butschster/windows`) is a view window without the
+A desktop widget (FR-006 in `windows/shell`) is a view window without the
 window: a registry entry whose process the compositor spawns like the state
 provider of a view window, and whose published state the theme draws in a
 panel on the desktop, under every window. The base discovers nothing and
@@ -710,7 +710,7 @@ local ok, err = library.run({
     -- The shell reads the registry (meta.type: windows.widget) and hands the list over.
     widgets = function()
         return {{entry = "app.monitor:memory", title = "Memory", w = 20, h = 6,
-                 order = 20, opens = "butschster.windows.taskman:window"}}, nil
+                 order = 20, opens = "windows.shell.taskman:window"}}, nil
     end,
 })
 ```
@@ -985,7 +985,7 @@ make verify    # всё вместе
 поднимает десктоп без всякого приложения:
 
 ```bash
-cd test && wippy run --host butschster.tui_desktop:terminal desktop
+cd test && wippy run --host windows.tui_desktop:terminal desktop
 ```
 
 Полноэкранную программу нельзя проверить кодом возврата: без настоящего
@@ -997,7 +997,7 @@ cd test && wippy run --host butschster.tui_desktop:terminal desktop
 ```bash
 cd test && python3 ../tools/tui-probe.py --cols 100 --rows 26 --boot 60 \
     --send $'\033n' --send 'echo ok' --send-key enter --expect 'ok' \
-    -- wippy run --host butschster.tui_desktop:terminal desktop
+    -- wippy run --host windows.tui_desktop:terminal desktop
 ```
 
 ### Право под каждый объявленный модуль — правилом, а не глазами

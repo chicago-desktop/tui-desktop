@@ -12,7 +12,7 @@ local time = require("time")
 local tty = require("tty")
 local desktop = require("desktop")
 
-local FAMILY = "butschster.tui_desktop.test.slots"
+local FAMILY = "windows.tui_desktop.test.slots"
 local WATCHER = FAMILY .. ".watcher"
 
 local function body_of(message: any): any
@@ -66,7 +66,7 @@ local function ask(service: string, topic: string): any
 end
 
 local function define_tests()
-    test.describe("butschster.tui_desktop desktop names", function()
+    test.describe("windows.tui_desktop desktop names", function()
         test.it("each desktop claims the first free name, and a freed one is taken again", function()
             process.registry.register(WATCHER)
             local first = spawn()

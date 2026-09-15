@@ -11,7 +11,7 @@ local channel = require("channel")
 local exec = require("exec")
 local tty = require("tty")
 
-local EXECUTOR = "butschster.tui_desktop:exec"
+local EXECUTOR = "windows.tui_desktop:exec"
 -- Interactive Bash reads ~/.bashrc; the host config supplies HOME and PATH
 -- on the dedicated PTY executor (exec.native does not inherit OS variables).
 local DEFAULT_COMMAND = "/bin/bash -i"

@@ -2,12 +2,12 @@
   "templateVersion": 1,
   "initialized": true,
   "identity": {
-    "organization": "butschster",
+    "organization": "windows",
     "module": "tui-desktop",
-    "namespace": "butschster.tui_desktop",
-    "tag": "butschster-tui-desktop",
+    "namespace": "windows.tui_desktop",
+    "tag": "windows-tui-desktop",
     "route": "tui-desktop",
     "title": "TUI Desktop",
-    "githubOwner": "butschster"
+    "githubOwner": "wippy-windows"
   }
 }

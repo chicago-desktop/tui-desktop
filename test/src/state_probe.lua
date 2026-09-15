@@ -8,7 +8,7 @@ local channel = require("channel")
 local process = require("process")
 local time = require("time")
 
-local NAME = "butschster.tui_desktop.test.provider"
+local NAME = "windows.tui_desktop.test.provider"
 
 local function body_of(message: any)
     local body: any = message:payload()

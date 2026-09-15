@@ -92,9 +92,9 @@ local function until_true(ready: any)
 end
 
 local function define_tests()
-    test.describe("butschster.tui_desktop outline drag", function()
+    test.describe("windows.tui_desktop outline drag", function()
         test.it("the window stays until the release, Esc drops the outline, and a burst of motions is a few frames", function()
-            local desk = boot("butschster.tui_desktop.test.outline")
+            local desk = boot("windows.tui_desktop.test.outline")
             local function send(event: any)
                 test.is_true(desk.view:send(event) == true, "the event did not reach the compositor")
             end

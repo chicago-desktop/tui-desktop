@@ -1,8 +1,8 @@
 version: "1.0"
-namespace: butschster.tui_desktop.migrations
+namespace: windows.tui_desktop.migrations
 
 entries:
-  # butschster.tui_desktop.migrations:01_create_windows
+  # windows.tui_desktop.migrations:01_create_windows
   - name: 01_create_windows
     kind: function.lua
     meta:
@@ -15,7 +15,7 @@ entries:
       migration: wippy.migration:migration
     method: migrate
 
-  # butschster.tui_desktop.migrations:02_window_group
+  # windows.tui_desktop.migrations:02_window_group
   - name: 02_window_group
     kind: function.lua
     meta:
@@ -28,7 +28,7 @@ entries:
       migration: wippy.migration:migration
     method: migrate
 
-  # butschster.tui_desktop.migrations:03_window_spec
+  # windows.tui_desktop.migrations:03_window_spec
   - name: 03_window_spec
     kind: function.lua
     meta:

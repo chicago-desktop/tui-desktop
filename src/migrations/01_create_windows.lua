@@ -9,11 +9,11 @@
 -- версий и отката, а откат к неработавшему коду ценности не имеет.
 
 return require("migration").define(function()
-    migration("Create butschster_tui_desktop_windows table", function()
+    migration("Create windows_tui_desktop_windows table", function()
         database("postgres", function()
             up(function(db)
                 local _, err = db:execute([[
-                    CREATE TABLE butschster_tui_desktop_windows (
+                    CREATE TABLE windows_tui_desktop_windows (
                         name TEXT PRIMARY KEY,
                         title TEXT NOT NULL,
                         width INTEGER NOT NULL,
@@ -24,14 +24,14 @@ return require("migration").define(function()
                         updated_at TEXT NOT NULL DEFAULT (to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
                     );
                 ]])
-                if err then error("Failed to create butschster_tui_desktop_windows: " .. err) end
+                if err then error("Failed to create windows_tui_desktop_windows: " .. err) end
             end)
-            down(function(db) db:execute("DROP TABLE butschster_tui_desktop_windows") end)
+            down(function(db) db:execute("DROP TABLE windows_tui_desktop_windows") end)
         end)
         database("sqlite", function()
             up(function(db)
                 local _, err = db:execute([[
-                    CREATE TABLE butschster_tui_desktop_windows (
+                    CREATE TABLE windows_tui_desktop_windows (
                         name TEXT PRIMARY KEY,
                         title TEXT NOT NULL,
                         width INTEGER NOT NULL,
@@ -42,9 +42,9 @@ return require("migration").define(function()
                         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
                     )
                 ]])
-                if err then error("Failed to create butschster_tui_desktop_windows: " .. err) end
+                if err then error("Failed to create windows_tui_desktop_windows: " .. err) end
             end)
-            down(function(db) db:execute("DROP TABLE butschster_tui_desktop_windows") end)
+            down(function(db) db:execute("DROP TABLE windows_tui_desktop_windows") end)
         end)
     end)
 end)

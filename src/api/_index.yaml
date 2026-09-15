@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: butschster.tui_desktop.api
+namespace: windows.tui_desktop.api
 
 # Командный канал: тем же десктопом, за которым сидит человек, управляет
 # агент снаружи. Обе стороны работают одновременно — композитор один, и он
@@ -9,7 +9,7 @@ namespace: butschster.tui_desktop.api
 # сохранить, чтобы оно пережило перезапуск.
 
 entries:
-  # butschster.tui_desktop.api:control
+  # windows.tui_desktop.api:control
   - name: control
     kind: library.lua
     meta:
@@ -20,9 +20,9 @@ entries:
       - process
       - time
     imports:
-      window_api: butschster.tui_desktop.desktop:window_api
+      window_api: windows.tui_desktop.desktop:window_api
 
-  # butschster.tui_desktop.api:list_windows
+  # windows.tui_desktop.api:list_windows
   - name: list_windows
     kind: function.lua
     meta:
@@ -33,9 +33,9 @@ entries:
       - http
       - security
     imports:
-      control: butschster.tui_desktop.api:control
+      control: windows.tui_desktop.api:control
     security:
-      policies: [butschster.tui_desktop.security:desktop_command_channel]
+      policies: [windows.tui_desktop.security:desktop_command_channel]
 
   - name: list_windows.endpoint
     kind: http.endpoint
@@ -46,7 +46,7 @@ entries:
     func: list_windows
     path: /tui-desktop/windows
 
-  # butschster.tui_desktop.api:open_window
+  # windows.tui_desktop.api:open_window
   - name: open_window
     kind: function.lua
     meta:
@@ -58,9 +58,9 @@ entries:
       - json
       - security
     imports:
-      control: butschster.tui_desktop.api:control
+      control: windows.tui_desktop.api:control
     security:
-      policies: [butschster.tui_desktop.security:desktop_command_channel]
+      policies: [windows.tui_desktop.security:desktop_command_channel]
 
   - name: open_window.endpoint
     kind: http.endpoint
@@ -71,7 +71,7 @@ entries:
     func: open_window
     path: /tui-desktop/windows
 
-  # butschster.tui_desktop.api:window_action
+  # windows.tui_desktop.api:window_action
   - name: window_action
     kind: function.lua
     meta:
@@ -83,9 +83,9 @@ entries:
       - json
       - security
     imports:
-      control: butschster.tui_desktop.api:control
+      control: windows.tui_desktop.api:control
     security:
-      policies: [butschster.tui_desktop.security:desktop_command_channel]
+      policies: [windows.tui_desktop.security:desktop_command_channel]
 
   - name: window_action.endpoint
     kind: http.endpoint
@@ -102,7 +102,7 @@ entries:
   # ниже принимают код будущего окна, поэтому живут за аутентифицированным
   # роутером и за собственной политикой.
 
-  # butschster.tui_desktop.api:create_app
+  # windows.tui_desktop.api:create_app
   - name: create_app
     kind: function.lua
     meta:
@@ -117,13 +117,13 @@ entries:
       - env
       - registry
     imports:
-      repo: butschster.tui_desktop.persist:repo
-      apps: butschster.tui_desktop.persist:apps
+      repo: windows.tui_desktop.persist:repo
+      apps: windows.tui_desktop.persist:apps
     security:
       policies:
-        - butschster.tui_desktop.security:workshop_scope
+        - windows.tui_desktop.security:workshop_scope
         # То же, что у композитора: хранилище читает имя базы из окружения.
-        - butschster.tui_desktop.security:storage_env
+        - windows.tui_desktop.security:storage_env
 
   - name: create_app.endpoint
     kind: http.endpoint
@@ -134,7 +134,7 @@ entries:
     func: create_app
     path: /tui-desktop/apps
 
-  # butschster.tui_desktop.api:list_apps
+  # windows.tui_desktop.api:list_apps
   - name: list_apps
     kind: function.lua
     meta:
@@ -149,13 +149,13 @@ entries:
       - json
       - registry
     imports:
-      repo: butschster.tui_desktop.persist:repo
-      apps: butschster.tui_desktop.persist:apps
+      repo: windows.tui_desktop.persist:repo
+      apps: windows.tui_desktop.persist:apps
     security:
       policies:
-        - butschster.tui_desktop.security:workshop_scope
+        - windows.tui_desktop.security:workshop_scope
         # То же, что у композитора: хранилище читает имя базы из окружения.
-        - butschster.tui_desktop.security:storage_env
+        - windows.tui_desktop.security:storage_env
 
   - name: list_apps.endpoint
     kind: http.endpoint
@@ -166,7 +166,7 @@ entries:
     func: list_apps
     path: /tui-desktop/apps
 
-  # butschster.tui_desktop.api:delete_app
+  # windows.tui_desktop.api:delete_app
   - name: delete_app
     kind: function.lua
     meta:
@@ -181,13 +181,13 @@ entries:
       - json
       - registry
     imports:
-      repo: butschster.tui_desktop.persist:repo
-      apps: butschster.tui_desktop.persist:apps
+      repo: windows.tui_desktop.persist:repo
+      apps: windows.tui_desktop.persist:apps
     security:
       policies:
-        - butschster.tui_desktop.security:workshop_scope
+        - windows.tui_desktop.security:workshop_scope
         # То же, что у композитора: хранилище читает имя базы из окружения.
-        - butschster.tui_desktop.security:storage_env
+        - windows.tui_desktop.security:storage_env
 
   - name: delete_app.endpoint
     kind: http.endpoint
