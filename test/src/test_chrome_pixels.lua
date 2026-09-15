@@ -132,6 +132,15 @@ end
 -- are pulled out because the check clicks by them too: if they drifted apart
 -- they would give "the click did not work" instead of an honest refusal.
 chrome.MENU_BUTTON = {from = 60, to = 70}
+
+-- Where this theme puts the balloon tip: thirty cells at the right edge, three
+-- rows, the last one two rows above the bottom of the screen. The check
+-- clicks by the same rectangle.
+function chrome.balloon_rect(width: any, height: any): any
+    local w = math.tointeger(width) or 80
+    local h = math.tointeger(height) or 24
+    return {x = w - 29, y = h - 5, cols = 30, rows = 3}
+end
 chrome.MENU_ROW = 6
 chrome.FOLDER = "Programs"
 
@@ -239,6 +248,18 @@ function chrome.paint(state: any, cell_w, cell_h)
     for _, hit in ipairs(choices) do
         hit.row = chrome.MENU_ROW + (hit.row - chrome.MENU_ROW) * 2
         hit.bottom_row = hit.row + 1
+    end
+
+    -- The balloon tip (`state.balloon`): a box above the taskbar at the right
+    -- edge with its × on the box's first row, among the bar hits, the × first.
+    -- Added after the taskbar rows were set above: these name their own rows.
+    if type(state.balloon) == "table" then
+        local rect = chrome.balloon_rect(state.width, state.height)
+        placements[#placements + 1] = {id = "balloon", x = rect.x, y = rect.y, cols = rect.cols, rows = rect.rows}
+        slots[#slots + 1] = {row = rect.y, from = rect.x + rect.cols - 2, to = rect.x + rect.cols - 1,
+            balloon = "close"}
+        slots[#slots + 1] = {row = rect.y, bottom_row = rect.y + rect.rows - 1,
+            from = rect.x, to = rect.x + rect.cols - 1, balloon = "open"}
     end
 
     -- Widget records exist only here, never in `fill`'s hits: a widget click

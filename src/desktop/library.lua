@@ -135,6 +135,27 @@ local TRAY_MAX = 6
 local TRAY_TEXT = 16
 local TRAY_KEY = 64
 
+-- Balloon tips by the notification area (`desktop.balloon`). One is shown at
+-- a time and the others wait their turn. The limit counts every balloon the
+-- desktop holds, the shown one included: a ninth almost always means a
+-- provider that posts a new key on every event instead of replacing its own,
+-- and a queue of those would show stale news for minutes. The theme wraps and
+-- ellipsizes the text; the lengths here only keep a runaway caller off the
+-- frame.
+local BALLOON_MAX = 8
+local BALLOON_TIMEOUT, BALLOON_LEAST, BALLOON_MOST = 10, 2, 60
+local BALLOON_TITLE, BALLOON_TEXT = 64, 512
+local BALLOON_ICONS: {[string]: boolean} = {info = true, warning = true, error = true}
+
+-- A flashing window (`desktop.flash`): its lit and plain looks swap every
+-- FLASH_STEP_MS until it takes the focus, or for the cycles a count allows.
+local FLASH_STEP_MS = 500
+
+-- The notice line, opened to modules (`desktop.notice`): shown for a ttl in
+-- seconds, then cleared unless a later notice replaced it.
+local NOTICE_TTL, NOTICE_LEAST, NOTICE_MOST = 5, 1, 60
+local NOTICE_TEXT = 256
+
 -- Desktop widgets (FR-006 in chicago/shell): registry entries whose
 -- process the compositor spawns like the state provider of a view window,
 -- and whose published tree the theme draws in a panel under every window.
@@ -184,6 +205,36 @@ local function clamp(value, low, high)
     if number < lo then return lo end
     if number > hi then return hi end
     return number
+end
+
+-- seconds(value, default, low, high) -> seconds within the bounds | nil
+--
+-- A duration a command names: absent is the default, a number is clamped,
+-- anything else (a string, NaN) is nil — the caller refuses it by name.
+local function seconds(value: any, default: number, low: number, high: number): number?
+    if value == nil then return default end
+    if type(value) ~= "number" or value ~= value then return nil end
+    if value < low then return low end
+    if value > high then return high end
+    return value
+end
+
+-- after_seconds(value) -> a timer channel that fires once after `value` seconds.
+local function after_seconds(value: number): any
+    local ms = math.tointeger(math.floor(value * 1000)) or 1000
+    return time.after(tostring(ms) .. "ms")
+end
+
+-- without(list, index) -> a new list without its `index`-th item, and that
+-- item. `table.remove` wants a typed array, and the state tables here are
+-- `any` (the logon pcall trap keeps them in tables).
+local function without(list: any, index: integer): (any, any)
+    local kept: any = {}
+    local taken: any = nil
+    for position, item in ipairs(list) do
+        if position == index then taken = item else kept[#kept + 1] = item end
+    end
+    return kept, taken
 end
 
 -- run(options) — bring the compositor up on the current terminal.
@@ -675,6 +726,153 @@ local function run(options: any)
         return true, nil, changed or pruned
     end
 
+    -- Balloon tips (`desktop.balloon`). `shown` is the one on screen, `queue`
+    -- the ones waiting in order, `timer` the shown one's timeout. A table,
+    -- like `tray`: the logon pcall sits above in this frame.
+    local balloons: any = {shown = nil, queue = {}, timer = nil, seq = 0}
+
+    -- What the balloon gives the theme and the command channel. The theme
+    -- gets what it draws and what a click turns into; the channel also gets
+    -- the owner, the timeout and the time left.
+    local function balloon_view(detailed: boolean): any
+        local item: any = balloons.shown
+        if item == nil then return nil end
+        local view: any = {key = item.key, title = item.title, text = item.text, icon = item.icon,
+            image = item.image, anchor = item.anchor, entry = item.entry, bell = item.bell}
+        if detailed then
+            view.args = item.args
+            view.owner = item.owner
+            view.timeout = item.timeout
+            local left: integer = math.tointeger((tonumber(item.expires) or 0) - time.now():unix_nano()) or 0
+            view.expires_in = math.max(0, left // 1000000000)
+        end
+        return view
+    end
+
+    -- show_balloon(item) — on screen, with its timeout running.
+    --
+    -- `bell` is carried, not rung: the runtime's surface writes frames only
+    -- (rows, a cursor, images) and has no way to ring the terminal's bell.
+    -- The flag reaches the theme and `desktop.list`, so the request is visible
+    -- and a runtime that learns to ring finds it in place.
+    local function show_balloon(item: any)
+        balloons.shown = item
+        item.expires = time.now():unix_nano() + math.floor(item.timeout * 1000000000)
+        balloons.timer = after_seconds(tonumber(item.timeout) or BALLOON_TIMEOUT)
+    end
+
+    -- next_balloon() — the shown one goes; the first waiting one takes its place.
+    local function next_balloon()
+        balloons.shown, balloons.timer = nil, nil
+        local rest, first = without(balloons.queue, 1)
+        balloons.queue = rest
+        if first ~= nil then show_balloon(first) end
+    end
+
+    -- set_balloon(body, from) -> accepted, reason, whether the view changed, key, item
+    --
+    -- The same key replaces a waiting or the shown balloon in its place (the
+    -- shown one restarts its timeout); `remove = true` dismisses it. A refusal
+    -- names the field or the limit: a provider whose balloon silently did not
+    -- show would believe it had.
+    local function set_balloon(body: any, from: any): (boolean, any, boolean, any, any)
+        local key: any = body.key
+        if key ~= nil and (type(key) ~= "string" or key == "") then
+            return false, "a balloon's key is a non-empty string", false, nil, nil
+        end
+        if key ~= nil and #key > TRAY_KEY then
+            return false, "the balloon key is longer than " .. TRAY_KEY, false, key, nil
+        end
+        local index = 0
+        if key ~= nil then
+            for position, item in ipairs(balloons.queue) do
+                if item.key == key then index = position end
+            end
+        end
+        local shown: any = balloons.shown
+        local is_shown = key ~= nil and shown ~= nil and shown.key == key
+
+        if body.remove == true then
+            if key == nil then return false, "a balloon is removed by its key", false, nil, nil end
+            if is_shown then
+                next_balloon()
+                return true, nil, true, key, nil
+            end
+            if index > 0 then balloons.queue = (without(balloons.queue, index)) end
+            return true, nil, false, key, nil
+        end
+
+        local function required(name: string, limit: integer): (any, any)
+            local value: any = body[name]
+            if type(value) ~= "string" or value == "" then return nil, "a balloon needs its " .. name end
+            if #runes(value) > limit then
+                return nil, "the balloon " .. name .. " is longer than " .. limit .. " characters"
+            end
+            return value, nil
+        end
+        local function optional(name: string): (any, any)
+            local value: any = body[name]
+            if value == nil or value == "" then return nil, nil end
+            if type(value) ~= "string" then return nil, "a balloon's " .. name .. " is a string" end
+            return value, nil
+        end
+
+        local title, title_error = required("title", BALLOON_TITLE)
+        if not title then return false, title_error, false, key, nil end
+        local text, text_error = required("text", BALLOON_TEXT)
+        if not text then return false, text_error, false, key, nil end
+        local icon: any = body.icon
+        if icon ~= nil and not (type(icon) == "string" and BALLOON_ICONS[icon]) then
+            return false, "a balloon's icon is info, warning or error, not " .. tostring(icon), false, key, nil
+        end
+        local fields: any = {}
+        for _, name in ipairs({"image", "anchor", "entry", "args"}) do
+            local value, why = optional(name)
+            if why then return false, why, false, key, nil end
+            fields[name] = value
+        end
+        if fields.image ~= nil and #fields.image > TRAY_KEY then
+            return false, "the balloon image name is longer than " .. TRAY_KEY, false, key, nil
+        end
+        local timeout = seconds(body.timeout, BALLOON_TIMEOUT, BALLOON_LEAST, BALLOON_MOST)
+        if timeout == nil then return false, "a balloon's timeout is a number of seconds", false, key, nil end
+        if body.bell ~= nil and type(body.bell) ~= "boolean" then
+            return false, "a balloon's bell is true or false", false, key, nil
+        end
+
+        if key == nil then
+            balloons.seq = balloons.seq + 1
+            key = "b" .. balloons.seq
+        end
+        local item: any = {key = key, title = title, text = text, icon = icon,
+            image = fields.image, anchor = fields.anchor, entry = fields.entry, args = fields.args,
+            timeout = timeout, bell = body.bell == true, owner = from ~= nil and tostring(from) or nil}
+        if is_shown then
+            show_balloon(item)
+            return true, nil, true, key, item
+        end
+        if index > 0 then
+            balloons.queue[index] = item
+            return true, nil, false, key, item
+        end
+        local held = #balloons.queue + (shown ~= nil and 1 or 0)
+        if held >= BALLOON_MAX then
+            return false, "balloon " .. tostring(key) .. " refused: the desktop already holds "
+                .. BALLOON_MAX .. " balloons", false, key, nil
+        end
+        if shown == nil then
+            show_balloon(item)
+            return true, nil, true, key, item
+        end
+        balloons.queue[#balloons.queue + 1] = item
+        return true, nil, false, key, item
+    end
+
+    -- The notice line opened to modules (`desktop.notice`). `text` is what
+    -- the command put there: its timer clears the line only while the line
+    -- still says it, so a notice of the compositor's own that came later wins.
+    local notice_clock: any = {timer = nil, text = nil}
+
     -- Running widgets in display order. A table, like `tray`: the logon pcall
     -- sits above in this frame, and `sync_widgets` replaces the list.
     local widgets: any = {items = {}, spawned = 0}
@@ -912,6 +1110,70 @@ local function run(options: any)
         -- and there is nothing to get it back with: there is deliberately no
         -- modality here, the input of the other windows is not blocked.
         for _, child in ipairs(children_of(window.id)) do raise(child) end
+    end
+
+    -- Flashing windows (`desktop.flash`), FlashWindow's semantics: the
+    -- taskbar button and the title bar swap between their lit and plain looks
+    -- until the window takes the focus. The window record carries `flashing`
+    -- and `flash_lit` for the theme, and `flash_left` — the swaps a count
+    -- still allows (nil: until the focus). One timer serves every window;
+    -- `focused_id` is the focus the last frame drew, so the frame that first
+    -- shows a flashing window focused ends its flash. A table: the logon pcall
+    -- sits above in this frame.
+    local flashes: any = {timer = nil, focused_id = nil}
+
+    local function stop_flash(window: any)
+        window.flashing, window.flash_lit, window.flash_left = false, false, nil
+    end
+
+    -- The timer runs while any window flashes, and only then.
+    local function arm_flash()
+        for _, window in ipairs(windows) do
+            if window.flashing then
+                if flashes.timer == nil then flashes.timer = time.after(tostring(FLASH_STEP_MS) .. "ms") end
+                return
+            end
+        end
+        flashes.timer = nil
+    end
+
+    -- start_flash(window, count) — lit at once; `count` cycles of lit and
+    -- plain, or until the window takes the focus.
+    local function start_flash(window: any, count: any)
+        window.flashing, window.flash_lit = true, true
+        window.flash_left = count ~= nil and count * 2 or nil
+        -- A focused window flashes only with a count (the command refuses it
+        -- otherwise); the focus it already has is not the focus that ends it.
+        local top = focused()
+        if top ~= nil and top.id == window.id then flashes.focused_id = window.id end
+        arm_flash()
+    end
+
+    -- flash_step() -> whether a frame is owed. Every step the looks swap; a
+    -- counted flash ends on its last swap, in the plain look.
+    local function flash_step(): boolean
+        flashes.timer = nil
+        local changed = false
+        for _, window in ipairs(windows) do
+            if window.flashing then
+                changed = true
+                window.flash_lit = not window.flash_lit
+                if window.flash_left ~= nil then
+                    window.flash_left = window.flash_left - 1
+                    if window.flash_left <= 0 then stop_flash(window) end
+                end
+            end
+        end
+        arm_flash()
+        return changed
+    end
+
+    local function flashing_ids(): any
+        local out = {}
+        for _, window in ipairs(windows) do
+            if window.flashing then out[#out + 1] = window.id end
+        end
+        return out
     end
 
     -- Declared in advance: the arranging computes the icon grid, and the grid
@@ -1175,6 +1437,11 @@ local function run(options: any)
         canvas:clear(" ")
 
         local top = focused()
+        -- The frame that first shows a flashing window focused ends its
+        -- flash: FlashWindow's "until the window is activated". Before the
+        -- painting, so this very frame draws it plain.
+        if top ~= nil and top.flashing and flashes.focused_id ~= top.id then stop_flash(top) end
+        flashes.focused_id = top and top.id or nil
         -- Computed before branching on `top`: after the if/else the linter
         -- keeps it narrowed, and the `id` field no longer exists for it.
         local focused_id = top and top.id or nil
@@ -1257,6 +1524,8 @@ local function run(options: any)
                 menu = menu and {items = menu.items, failure = menu.failure,
                     open = menu.open, cursor = menu.cursor, anchor = menu.anchor} or nil,
                 status = status, notice = notice, clock = clock, tray = tray_view(false), hint = HINT,
+                -- The balloon tip by the notification area, or nil.
+                balloon = balloon_view(false),
                 widgets = widget_list,
                 -- A move or resize drag's pending rect: the theme draws its
                 -- outline over everything (a theme that does not know the
@@ -1300,6 +1569,10 @@ local function run(options: any)
                 -- does not draw it: the field is optional, as the clock
                 -- itself is.
                 tray = tray_view(false),
+                -- The balloon tip, drawn by `bars` because `bars` comes after
+                -- the windows: it lies over them. A theme without it draws
+                -- nothing, and the balloon still times out.
+                balloon = balloon_view(false),
             })
             if type(bar_hits) ~= "table" then bar_hits = {} end
 
@@ -1735,6 +2008,18 @@ local function run(options: any)
         else notice = "could not open: " .. tostring(err) end
     end
 
+    -- balloon_click(part) — `close`, the ×, dismisses the balloon; `open`, its
+    -- body, opens the window it names (or raises the one already open, as a
+    -- tray item does) and dismisses it. The balloon has no focus to give.
+    local function balloon_click(part: any)
+        local item: any = balloons.shown
+        if item == nil then return end
+        if part == "open" and type(item.entry) == "string" and item.entry ~= "" then
+            if not raise_open(item.entry) then activate_menu_item({entry = item.entry, args = item.args}) end
+        end
+        next_balloon()
+    end
+
     -- The context menu of a desktop icon: "Open" — the same as a double click,
     -- and "Properties" if the program declared a properties window
     -- (`meta.properties` on the entry — the theme puts it into the icon's hit).
@@ -1986,6 +2271,19 @@ local function run(options: any)
         draw()
     end
 
+    -- The balloon's hit under a point, or nil. The balloon lies over the
+    -- windows: a right press or the wheel on it must not reach the window
+    -- beneath.
+    local function balloon_spot(x: any, y: any): any
+        for _, spot in ipairs(bar_hits) do
+            if spot.balloon ~= nil and y >= spot.row and y <= (spot.bottom_row or spot.row)
+                and x >= spot.from and x <= spot.to then
+                return spot
+            end
+        end
+        return nil
+    end
+
     local function handle_mouse(event)
         if client_capture and (event.action == "motion" or event.action == "release") then
             local target = find(client_capture)
@@ -2073,7 +2371,7 @@ local function run(options: any)
         end
 
         if event.action == "wheel" then
-            if menu or quitting then return end
+            if menu or quitting or balloon_spot(event.x, event.y) then return end
             local window = hit(event.x, event.y)
             if window and event.x >= window.x + insets.left
                 and event.x < window.x + window.w - insets.right
@@ -2095,7 +2393,7 @@ local function run(options: any)
         -- and middle buttons go to the window under the pointer, into its
         -- body — programs expect them there.
         if event.button ~= "left" then
-            if menu then return end
+            if menu or balloon_spot(event.x, event.y) then return end
             local window = hit(event.x, event.y)
             if window and event.x >= window.x + insets.left
                 and event.x < window.x + window.w - insets.right
@@ -2186,7 +2484,12 @@ local function run(options: any)
         for _, spot in ipairs(bar_hits) do
             if event.y >= spot.row and event.y <= (spot.bottom_row or spot.row)
                     and event.x >= spot.from and event.x <= spot.to then
-                if spot.id then
+                -- The balloon tip (`balloon = "close" | "open"`): the theme
+                -- puts its hits among the bars, before the windows.
+                if spot.balloon ~= nil then
+                    balloon_click(spot.balloon)
+                    draw()
+                elseif spot.id then
                     local window = find(spot.id)
                     if window then
                         window.minimized = false
@@ -2652,6 +2955,8 @@ local function run(options: any)
             x = window.x, y = window.y, width = window.w, height = window.h,
             ready = window.ready, minimized = window.minimized,
             maximized = window.maximized, closing = window.closing,
+            -- A flashing window (`desktop.flash`) and which look it shows now.
+            flashing = window.flashing == true, flash_lit = window.flash_lit == true,
         }
     end
 
@@ -2815,6 +3120,13 @@ local function run(options: any)
                 -- Widgets without their trees: "not spawned", "waiting for
                 -- its first state" and "stopped" differ here and nowhere else.
                 widgets = widget_view(true),
+                -- The balloon on screen with its owner and time left, and how
+                -- many wait: "not accepted", "waiting its turn" and "shown but
+                -- not drawn" differ here and nowhere else.
+                balloon = balloon_view(true),
+                balloon_queue = #balloons.queue,
+                -- The ids of the windows that flash.
+                flashing = flashing_ids(),
                 restore = restore_report}, to, topic)
             return pruned
         end
@@ -2828,6 +3140,88 @@ local function run(options: any)
             if not accepted then return refuse(tostring(why), to, topic, from) end
             reply({ok = true, key = body.key, items = #tray.items}, to, topic)
             return changed
+        end
+
+        -- A balloon tip by the notification area:
+        -- `{key?, title, text, icon?, image?, anchor?, entry?, args?, timeout?,
+        -- bell?}` shows or queues it, `{key, remove = true}` dismisses it. The
+        -- reply names the key (made up when none was given), whether it is
+        -- shown, how many wait, and the timeout after the clamp.
+        if topic == "desktop.balloon" then
+            local accepted, why, changed, key, item = set_balloon(body, from)
+            if not accepted then return refuse(tostring(why), to, topic, from) end
+            local shown: any = balloons.shown
+            reply({ok = true, key = key, shown = shown ~= nil and shown.key == key,
+                queue = #balloons.queue, timeout = item ~= nil and item.timeout or nil}, to, topic)
+            return changed
+        end
+
+        -- A flashing window: `{id?, count?, stop?}`. No id is the sender's own
+        -- window, found by its process as a refused close is. A window that
+        -- has the focus flashes only with a count: "until it is focused"
+        -- would never end.
+        if topic == "desktop.flash" then
+            if body.id ~= nil and type(body.id) ~= "string" then
+                return refuse("desktop.flash names a window by its id, a string", to, topic, from)
+            end
+            local target: any = window
+            if body.id == nil or body.id == "" then
+                target = window_of(from)
+                if target == nil then
+                    return refuse("desktop.flash names no window, and its sender is not a window of this desktop",
+                        to, topic, from)
+                end
+            elseif target == nil then
+                return refuse("no window " .. tostring(body.id), to, topic, from)
+            end
+            if body.stop == true then
+                local was = target.flashing == true
+                stop_flash(target)
+                reply({ok = true, id = target.id, flashing = false}, to, topic)
+                return was
+            end
+            local count: any = nil
+            if body.count ~= nil then
+                count = type(body.count) == "number" and math.tointeger(body.count) or nil
+                if count == nil or count < 1 then
+                    return refuse("a flash count is a whole number of cycles above zero", to, topic, from)
+                end
+            end
+            local top = focused()
+            if count == nil and top ~= nil and top.id == target.id then
+                stop_flash(target)
+                reply({ok = true, id = target.id, flashing = false, reason = "the window has the focus"}, to, topic)
+                return false
+            end
+            start_flash(target, count)
+            reply({ok = true, id = target.id, flashing = true}, to, topic)
+            return true
+        end
+
+        -- The notice line: `{text, ttl?}` shows the text for ttl seconds; an
+        -- empty text clears the line. The compositor's own notices keep
+        -- working, and the latest wins.
+        if topic == "desktop.notice" then
+            local text: any = body.text
+            if text ~= nil and type(text) ~= "string" then
+                return refuse("a notice's text is a string", to, topic, from)
+            end
+            if text == nil or text == "" then
+                notice = ""
+                notice_clock.timer, notice_clock.text = nil, nil
+                reply({ok = true}, to, topic)
+                return true
+            end
+            if #runes(text) > NOTICE_TEXT then
+                return refuse("the notice is longer than " .. NOTICE_TEXT .. " characters", to, topic, from)
+            end
+            local ttl = seconds(body.ttl, NOTICE_TTL, NOTICE_LEAST, NOTICE_MOST)
+            if ttl == nil then return refuse("a notice's ttl is a number of seconds", to, topic, from) end
+            notice = text
+            notice_clock.text = text
+            notice_clock.timer = after_seconds(ttl)
+            reply({ok = true, ttl = ttl}, to, topic)
+            return true
         end
 
         if topic == "desktop.refresh" then
@@ -3057,6 +3451,9 @@ local function run(options: any)
         }
         if hover_timer then cases[#cases + 1] = hover_timer:case_receive() end
         if frame_gate.timer then cases[#cases + 1] = frame_gate.timer:case_receive() end
+        if balloons.timer then cases[#cases + 1] = balloons.timer:case_receive() end
+        if flashes.timer then cases[#cases + 1] = flashes.timer:case_receive() end
+        if notice_clock.timer then cases[#cases + 1] = notice_clock.timer:case_receive() end
         local watched = {}
         for _, window in ipairs(windows) do
             -- A view window has no frames: there is nobody to publish them.
@@ -3100,6 +3497,30 @@ local function run(options: any)
         if hover_timer ~= nil and selected.channel == hover_timer then
             meter.trigger = "hover"
             settle_hover()
+            handled = true
+        end
+        -- The shown balloon timed out: the next one waiting takes its place.
+        if balloons.timer ~= nil and selected.channel == balloons.timer then
+            meter.trigger = "balloon"
+            next_balloon()
+            draw()
+            handled = true
+        end
+        if flashes.timer ~= nil and selected.channel == flashes.timer then
+            meter.trigger = "flash"
+            if flash_step() then draw() end
+            handled = true
+        end
+        -- A module's notice ran its ttl: cleared, unless a later notice
+        -- (the compositor's own included) replaced it meanwhile.
+        if notice_clock.timer ~= nil and selected.channel == notice_clock.timer then
+            meter.trigger = "notice"
+            notice_clock.timer = nil
+            if notice == notice_clock.text then
+                notice = ""
+                draw()
+            end
+            notice_clock.text = nil
             handled = true
         end
 

@@ -572,6 +572,34 @@ entries:
     method: main
     modules: [channel, time]
 
+  # A window that flashes itself through window_api.flash, naming no window.
+  - name: flash_probe
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Flash probe
+      in_menu: false
+      comment: A window that asks the compositor to flash it without naming a window — the sender's own.
+    source: file://flash_probe.lua
+    method: main
+    modules: [channel, time]
+    imports:
+      desktop: chicago.tui_desktop.desktop:window_api
+
+  - name: notify_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: Notifications on a live compositor — balloons show one at a time, queue, replace by key, time out, refuse the ninth and answer clicks on the × and the body; a flash swaps its looks until focus, count or stop; the notice line keeps its ttl, clears on empty text and yields to a later notice.
+      group: TUI Desktop
+      suite: chicago_tui_desktop
+    source: file://notify_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+      desktop: chicago.tui_desktop.desktop:window_api
+    method: run
+
   - name: window_motion_test
     kind: function.lua
     meta:

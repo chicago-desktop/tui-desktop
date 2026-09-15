@@ -197,12 +197,16 @@ local function drop_stale(ch)
     return dropped
 end
 
--- request(topic, body) -> true | nil, reason
+-- request(topic, body, service?) -> true | nil, reason
 --
 -- Ask a question and do not wait: the reply arrives in `api.replies()`. Exactly
 -- what a window needs that draws itself and has no right to freeze.
-function api.request(topic, body)
+-- `service` names the desktop to ask, as for `call`: a process that is not a
+-- window has no desktop in its context, and a sender that reaches several
+-- desktops (the shell's notifications) names each one.
+function api.request(topic, body, service: string?)
     local name, source = api.service()
+    if type(service) == "string" and service ~= "" then name, source = service, "argument" end
     local pid, lerr = process.registry.lookup(name)
     if not pid then
         local reason = unreachable(name, source, lerr)
@@ -227,10 +231,13 @@ end
 -- ask(topic, body, opts) -> reply | nil, reason
 --
 -- opts.timeout — how long to wait (api.BUDGET by default).
+-- opts.service — the desktop to ask, instead of the one in the context.
 function api.ask(topic, body, opts)
     local options: any = type(opts) == "table" and opts or {}
     local budget = type(options.timeout) == "string" and options.timeout ~= ""
         and options.timeout or api.BUDGET
+    local service: string? = type(options.service) == "string" and options.service ~= ""
+        and tostring(options.service) or nil
 
     local ch, cerr = reply_channel()
     if not ch then return nil, tostring(cerr) end
@@ -241,14 +248,14 @@ function api.ask(topic, body, opts)
             {topic = topic, dropped = stale})
     end
 
-    local ok, rerr = api.request(topic, body)
+    local ok, rerr = api.request(topic, body, service)
     if not ok then return nil, rerr end
 
     local expiry = time.after(budget)
     while true do
         local picked = channel.select({ch:case_receive(), expiry:case_receive()})
         if picked.channel == expiry then
-            local name = api.service()
+            local name = service or api.service()
             return nil, "desktop \"" .. name .. "\" did not answer within " .. budget
         end
         if not picked.ok then
@@ -363,6 +370,42 @@ end
 -- in the inbox.
 function api.tray(spec, service: string?)
     local ok, err = call("desktop.tray", type(spec) == "table" and spec or {}, service)
+    return ok, err
+end
+
+-- balloon{key?, title, text, icon?, image?, anchor?, entry?, args?, timeout?, bell?} [, service]
+-- balloon{key=…, remove=true} [, service]
+--
+-- A balloon tip by the notification area: a bold title under an info,
+-- warning or error picture (or `image`, a pack picture), the text wrapped
+-- under it, a tail pointing at the tray item `anchor` or at the clock. One is
+-- shown at a time; the others wait. A click on its body opens `entry` (or
+-- raises the window already open) and dismisses it; its × dismisses it;
+-- `timeout` seconds (10, clamped to 2..60) dismiss it too. Does not wait for
+-- a reply, like `tray`: a refusal arrives on its own, marked `unsolicited`.
+function api.balloon(spec, service: string?)
+    local ok, err = call("desktop.balloon", type(spec) == "table" and spec or {}, service)
+    return ok, err
+end
+
+-- flash(id) / flash{id=…, count=…} / flash{stop=true} [, service]
+--
+-- The window's taskbar button and title bar swap between their lit and plain
+-- looks until the window takes the focus, or for `count` cycles; `stop`
+-- ends it. No id is the calling window itself.
+function api.flash(spec, service: string?)
+    local body: any = type(spec) == "table" and spec or {id = spec}
+    local ok, err = call("desktop.flash", body, service)
+    return ok, err
+end
+
+-- notice("text") / notice{text=…, ttl=…} [, service]
+--
+-- The taskbar notice line for `ttl` seconds (5, clamped to 1..60); an empty
+-- text clears it.
+function api.notice(spec, service: string?)
+    local body: any = type(spec) == "table" and spec or {text = spec}
+    local ok, err = call("desktop.notice", body, service)
     return ok, err
 end
 

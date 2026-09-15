@@ -156,6 +156,9 @@ The workshop — windows built on the fly:
 - `POST /tui-desktop/apps` — build a window: `name`, `source`, `title`, `width`, `height`, `modules`, `group` (the menu folder, like `meta.group` of an entry from a file; empty — the shell chooses the folder). Beyond the code — the same fields as an entry from a file: `imports` (`{name = library id}`, the name `desktop` is taken), `pixel_render` (the library of the pixel view; `pixel_state` — the window itself), `image`, `icon`, `window_type` (`app | dialog | tool`), `resizable`, `in_menu`, `order`. This is how the workshop builds a window on the shell SDK: `imports = {app = "chicago.shell.sdk:app"}`, `pixel_render = "chicago.shell.sdk:render"`. A dead import and a non-library are rejected with the field's name
 - `GET /tui-desktop/apps` — the saved windows and the `live` flag (whether a registry entry exists right now)
 - command `desktop.tray` `{key, text, entry?, title?, ttl?}` of the command channel — a notification area item next to the clock; the same `key` updates it, `{key, remove: true}` removes it. At most 6 items and 16 characters in a label. An item not updated within `ttl` seconds is removed by the compositor itself. A click on an item opens `entry` or raises the window already open — like a click on the clock. From Lua — `window_api.tray(spec, service?)`; `desktop.list` returns `tray` with the owner and the remaining lifetime
+- command `desktop.balloon` `{key?, title, text, icon?, image?, anchor?, entry?, args?, timeout?, bell?}` of the command channel — a balloon tip by the notification area: `icon` is `info`, `warning` or `error` (the picture left of the bold title), `image` a pack picture drawn instead of it, `anchor` the key of the tray item its tail points at (else the clock), `entry`/`args` the window a click on its body opens or raises (like a tray click; `args` a string), `timeout` seconds (default 10, clamped to 2..60), `bell` a request to ring the terminal bell once. One balloon is shown at a time and the others wait in order; the desktop holds at most 8, the shown one included, and a ninth is refused with its key named. The same `key` replaces a waiting or the shown balloon (the shown one restarts its timeout); without a key the compositor makes one up (`b<n>`) and the reply names it; `{key, remove: true}` dismisses it. A click on its × dismisses it, a click on its body opens `entry` and dismisses it, the timeout dismisses it, and the next one takes its place. It takes no keyboard focus. The reply is `{key, shown, queue, timeout}`. **The bell does not ring:** the runtime's surface writes frames only (rows, a cursor, images), so `bell` is carried to the theme and to `desktop.list` and nothing more. From Lua — `window_api.balloon(spec, service?)`
+- command `desktop.flash` `{id?, count?, stop?}` of the command channel — FlashWindow: the window's taskbar button and its title bar swap between the lit and the plain look every half second until the window takes the focus. No `id` is the sender's own window, found by its process. `count` is a whole number of cycles (lit, then plain) after which the flash ends; `stop: true` ends it; the frame that first shows the window focused ends it. A window that has the focus flashes only with a count — "until it is focused" would never end — and the reply says `flashing: false` with the reason. The window record carries `flashing` and `flash_lit` for the theme; only the taskbar and the title bar change, so a swap repaints those rows and nothing else. From Lua — `window_api.flash(id | spec, service?)`
+- command `desktop.notice` `{text, ttl?}` of the command channel — the taskbar notice line, open to modules: `text` for `ttl` seconds (default 5, clamped to 1..60, at most 256 characters); an empty text clears the line. The compositor's own notices keep working and the latest wins: the ttl clears the line only while it still shows that text. From Lua — `window_api.notice(text | spec, service?)`
 - command `desktop.refresh` of the command channel also brings the desktop widgets in line with `options.widgets`: new entries are spawned, vanished ones stopped, stopped ones spawned again; `desktop.list` returns `widgets` — `{id, entry, title, opens, w, h, revision, waiting, stopped}` each, without the tree. See "Desktop widgets"
 - command `desktop.workshop` `{name, remove?}` of the command channel — apply a saved window to the registry (or remove it) through the compositor: this is how the MCP tool, whose scope forbids `registry.apply`, builds a window
 - `DELETE /tui-desktop/apps/{name}` — remove the window from the storage and the registry
@@ -195,6 +198,8 @@ telling them apart saved an hour:
 - Field: `pixels`; What it tells apart: which mode the compositor draws in
 - Field: `frame`; What it tells apart: the cost of the last frame: `changed_rows`, `bytes_written`, `images` and `placements_sent`. Wrongly sliced chrome draws the CORRECT screen, just slowly
 - Field: `restore`; What it tells apart: what happened to the workshop windows at start: silence would read as "there were no windows"
+- Field: `balloon`, `balloon_queue`; What it tells apart: the balloon on screen (`key`, `title`, `text`, `icon`, `image`, `anchor`, `entry`, `args`, `bell`, `owner`, `timeout`, `expires_in`) and how many wait: "not accepted", "waiting its turn" and "shown but not drawn" look the same on the screen
+- Field: `flashing`; What it tells apart: the ids of the windows that flash; each window also reports `flashing` and `flash_lit` — "the flash did not start" versus "it runs, but the theme does not draw it"
 
 A window in the list carries, besides its geometry: `window_type`, `opened_by`
 (who opened it), `content` (`cells` or `pixels`), `waiting` and `state_revision` —
@@ -623,9 +628,18 @@ A theme is a library that returns a table. The compositor calls only this:
 - Function: `icon_grid()`; Must: the desktop icon grid: `{w, h, left}` — the step to the right, the step down, the left edge of the first column
 - Function: `paint(state, cell_w, cell_h)`; Must: **pixel mode only**: return raster placements and a hit map. A theme without it is not let into this mode — see "Pixel chrome"
 
-The `state` of `bars` is `{windows, focused_id, menu_open, status, clock, tray}`;
+The `state` of `bars` is `{windows, focused_id, menu_open, status, clock, tray, balloon}`;
 `tray` is a list of `{key, text, entry, title}` in order of appearance; the
 theme returns a hit on an item the same way as for the clock — `{row, from, to, entry}`;
+`balloon` is the balloon tip on screen, `{key, title, text, icon, image, anchor,
+entry, bell}`, or nil. It is drawn by `bars` because `bars` comes after the
+windows, so it lies over them; the theme returns its hits among the bar hits,
+`{row, from, to, bottom_row?, balloon = "close"}` for its × and
+`balloon = "open"` for its body (the × first: the first hit under the pointer
+wins), and the compositor dismisses it or opens its `entry`. A right press or
+the wheel on a balloon hit reaches no window. A window in `windows` carries
+`flashing` and `flash_lit`: a lit window draws its taskbar button and its title
+bar highlighted, as FlashWindow does;
 the `state` of `fill` is `{top, bottom, items, failure, selected, widgets}`; of `paint` — the union
 of all of this, covered in "Pixel chrome".
 `widgets` is the list of desktop widgets in display order, in both modes; the
@@ -886,9 +900,10 @@ recognizes them without translation.
 - Field: `status`, `clock`; What it is: the status line and the clock
 - Field: `hint`; What it is: the hint on the empty desktop
 - `widgets` — desktop widgets in display order, each shaped like a view window; see "Desktop widgets"
+- `balloon` — the balloon tip on screen or nil, the same table `bars` gets; its hits go into `hits.bars`
 
 A window in `state.windows` carries: `id`, `title`, `x`, `y`, `w`, `h`, `window_type`
-(`app` / `dialog` / `tool`), `opened_by`, `minimized`, `maximized`, `ready`,
+(`app` / `dialog` / `tool`), `opened_by`, `minimized`, `maximized`, `ready`, `flashing`, `flash_lit`,
 `content` (`cells` / `pixels`), and for a view window — `render`, `waiting`,
 `state_revision` and the `content_state` itself.
 
