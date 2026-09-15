@@ -141,6 +141,10 @@ entries:
       width: 80
       height: 24
       comment: Окно с настоящей программой под PTY. Видит обычный tty-порт и не знает, что оно окно.
+      # The program runs under this entry's policy (exec allowed), not the
+      # logged-on person's: it is a shell on the server. So the compositor
+      # opens it only for an identity whose scope allows this action.
+      requires: tui_desktop.pty
     source: file://window_pty.lua
     method: main
     modules:

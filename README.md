@@ -125,6 +125,10 @@ override:
 Мышью можно перетащить окно за заголовок, потянуть за правый нижний угол,
 нажать `[-]`, `[□]`, `[×]` и переключиться по вкладке сверху. Включённая мышь
 забирает у терминала обычное выделение текста — для копирования держите Shift.
+The size handle is the last two cells of the bottom frame row, where a theme
+draws the Windows 95 sizing grip; the window keeps the pointer's offset from
+the corner while it is dragged, and a window with `resizable: false` ignores
+the handle.
 
 ## Командный канал
 
@@ -146,6 +150,7 @@ override:
 - `POST /tui-desktop/apps` — собрать окно: `name`, `source`, `title`, `width`, `height`, `modules`, `group` (папка меню, как `meta.group` у записи из файла; пусто — папку выбирает оболочка). Сверх кода — те же поля, что у записи из файла: `imports` (`{имя = id библиотеки}`, имя `desktop` занято), `pixel_render` (библиотека пиксельного вида; `pixel_state` — само окно), `image`, `icon`, `window_type` (`app | dialog | tool`), `resizable`, `in_menu`, `order`. Так в мастерской собирается окно на SDK оболочки: `imports = {app = "butschster.windows.sdk:app"}`, `pixel_render = "butschster.windows.sdk:render"`. Мёртвый импорт и не-библиотека отклоняются по имени поля
 - `GET /tui-desktop/apps` — сохранённые окна и признак `live` (есть ли запись в реестре сейчас)
 - команда `desktop.tray` `{key, text, entry?, title?, ttl?}` командного канала — пункт области уведомлений у часов; тот же `key` обновляет, `{key, remove: true}` снимает. Не больше 6 пунктов и 16 знаков в подписи. Пункт, не обновлённый за `ttl` секунд, композитор снимает сам. Щелчок по пункту открывает `entry` или поднимает уже открытое окно — как щелчок по часам. Из Lua — `window_api.tray(spec, service?)`; `desktop.list` отдаёт `tray` с владельцем и остатком срока
+- command `desktop.refresh` of the command channel also brings the desktop widgets in line with `options.widgets`: new entries are spawned, vanished ones stopped, stopped ones spawned again; `desktop.list` returns `widgets` — `{id, entry, title, opens, w, h, revision, waiting, stopped}` each, without the tree. See "Desktop widgets"
 - команда `desktop.workshop` `{name, remove?}` командного канала — применить сохранённое окно в реестр (или снять) силами композитора: так окно собирает туз MCP, чей скоуп запрещает `registry.apply`
 - `DELETE /tui-desktop/apps/{name}` — убрать окно из хранилища и реестра
 
@@ -331,6 +336,19 @@ desktop.focus(id)
 desktop.close(id)
 ```
 
+A close is a **request**: the title bar's ×, ctrl+w and a plain `desktop.close`
+send the window `close` and wait for it to close itself. A window may refuse —
+an application with a changed document asks first — and when the grace (3 s)
+runs out without it closing, it stays open and the status line says
+"<title> did not close" (`desktop.list` reports it as `notice`). Shutdown
+(ctrl+q, Shut Down) and `desktop.close{id, force = true}` do not ask: they kill
+the window after the grace, as every close did before. A PTY window has no loop
+to answer, so every close of it is forced. A window may also refuse at once: its
+own process answers `close` with `desktop.close{refused = true}`
+(`window_api.close(id, {refused = true})`; a cells window passes no id — its
+process names it), the request is over without the notice, and a later ×
+asks again; from any other process such a refusal is refused.
+
 Так виджет становится действующим: клик по строке открывает соседнее окно с
 параметром. Окно-приложение получает свой параметр как `args`; `command`
 остаётся программой для PTY-окна — одно поле на оба смысла читалось бы как
@@ -352,6 +370,12 @@ desktop.close(id)
 Описание окна в ответах `desktop.open` и `desktop.list` включает `image` —
 имя значка, выбранное при открытии из `meta.image` или параметров окна.
 Списки приложений используют его же, что заголовок и панель задач.
+
+The window description also carries `args` — the argument the window was
+opened with (`desktop.open{args = …}`), absent when there was none. An opener
+finds a window already open for the same thing by `entry` and `args` and sends
+`desktop.focus` instead of opening a second one: a folder window for the same
+path is raised, as in Windows 95. A bash window's command stays in `command`.
 
 
 Вопрос с ответом — `desktop.ask` (ждёт) или `desktop.request` + `desktop.replies()`
@@ -513,6 +537,9 @@ htop) умеет выдавать только ячейки, и окно, чья
 `publish_state(id, state)` отправляет состояние без запроса ответа. Если в
 состоянии есть `title`, обновляется заголовок окна. Изменение размера
 приходит событием `resize` с той же геометрией клиентской области.
+A state's `image` (a picture name) replaces the window's title-bar picture the
+same way, and `desktop.list` reports it; an absent or empty `image` keeps the
+picture the window has — a folder window that navigates in place changes both.
 
 ## Вид отделён от механики: контракт темы
 
@@ -548,6 +575,7 @@ end
 - Поле: `move_desktop_item`; Смысл: `(id, x, y) -> ok, error` — записать новое место значка. Композитор раскладку не пишет, а просит: отказ откатывает значок туда, откуда его взяли
 - Поле: `restore`; Смысл: возвращать ли на старте окна мастерской в реестр; по умолчанию да
 - Поле: `logon`; Смысл: `(screen) -> identity | nil, причина` — вход в систему до первого кадра стола. См. «Вход в систему»
+- `widgets` — `() -> {{entry, title, w, h, order, opens}, …}, failure`: desktop widgets to spawn. None given — no widgets. See "Desktop widgets"
 
 Тема — библиотека, возвращающая таблицу. Композитор зовёт только это:
 
@@ -566,8 +594,10 @@ end
 `state` у `bars` — `{windows, focused_id, menu_open, status, clock, tray}`;
 `tray` — список `{key, text, entry, title}` в порядке появления; попадание по
 пункту тема отдаёт как у часов — `{row, from, to, entry}`;
-у `fill` — `{top, bottom, items, failure, selected}`; у `paint` — объединение
+у `fill` — `{top, bottom, items, failure, selected, widgets}`; у `paint` — объединение
 всего этого, разобранное в «Пиксельном хроме».
+`widgets` is the list of desktop widgets in display order, in both modes; the
+stock theme of this module ignores it and draws none (see "Desktop widgets").
 
 В пиксельном режиме из этой таблицы не зовутся `window`, `bars`, `menu` и
 `empty_desktop`: всё, что они рисовали, приходит растрами из `paint`. Остальное
@@ -632,6 +662,14 @@ end
 своём подменю ничего не выбирает: `menu_cursor = 0`, enter молчит, стрелка
 вниз ведёт на первую строку.
 
+Plain motion also reaches windows, so an SDK menu inside a window can follow
+the pointer the same way: a motion with no button held and nothing captured is
+sent to the FOCUSED window as `{type = "mouse", action = "motion", x, y}` in
+its client cells, only while the pointer is over its client, and at most once
+per cell. Over the frame, the desktop or a window without the focus nothing
+is sent; leaving the client forgets the cell, so returning to it is sent again.
+While the Start menu is open the pointer is the menu's.
+
 Значок с подписью даёт несколько попаданий с ОДНИМ `id` — по строке рисунка и
 по строкам подписи. Композитор сводит их в один значок по `id` и берёт самую
 верхнюю строку: иначе стрелка вниз уходила бы с рисунка на его же подпись.
@@ -657,6 +695,62 @@ end
 
 Тема, попросившая больше строк, чем есть на экране, не роняет композитор:
 он сводит геометрию к экрану и рисует. Иначе окна уезжают за край молча.
+
+## Desktop widgets
+
+A desktop widget (FR-006 in `butschster/windows`) is a view window without the
+window: a registry entry whose process the compositor spawns like the state
+provider of a view window, and whose published state the theme draws in a
+panel on the desktop, under every window. The base discovers nothing and
+draws nothing: the shell lists the entries, the theme draws them.
+
+```lua
+local ok, err = library.run({
+    chrome = theme,
+    -- The shell reads the registry (meta.type: windows.widget) and hands the list over.
+    widgets = function()
+        return {{entry = "app.monitor:memory", title = "Memory", w = 20, h = 6,
+                 order = 20, opens = "butschster.windows.taskman:window"}}, nil
+    end,
+})
+```
+
+- **Lifecycle.** The list is read after logon — so every widget runs under the
+  logged-on user, like a window — and again on `desktop.refresh`. New entries
+  are spawned, entries that vanished are stopped and forgotten, stopped ones
+  are spawned again. Order: `order` (default 100), then the entry id. Ids are
+  `g<n>` in the order of spawning; a respawned widget keeps its id. A provider
+  that answers no list at all changes nothing: a registry hiccup must not
+  blank the desktop.
+- **Spawn.** `spawn_monitored(entry, workers host, compositor name, widget id,
+  nil, {width, height, cell_w, cell_h})` — the call of a view window's state
+  provider, with the compositor's name in the context. `width` and `height`
+  are the widget's cells. A terminal resize and a changed size send the
+  process a `resize` event on `window.input`, as a provider gets it.
+- **Size.** `w` 10..40 and `h` 2..16 whole cells, 20×5 when not given.
+  Outside the limits the widget is not spawned and not clamped — a tree laid
+  out for another size would be another widget; the status line names the
+  entry and the limit.
+- **State.** The process publishes through `desktop.state` with its widget id,
+  exactly as a view window's provider does, and only from the pid the
+  compositor spawned for that widget: nobody else can draw into it. Each state
+  bumps `state_revision` and redraws.
+- **Stopped.** A widget whose process exits keeps its last state and gets
+  `stopped = true`; the status line names the entry. `desktop.refresh` spawns
+  it again.
+- **Theme.** Both `fill` (cells) and `paint` (pixels) get `state.widgets`, a
+  list in display order of `{id, entry, title, opens, w, h, waiting, stopped,
+  content_state, state_revision}` — a view window's shape, so the SDK renderer
+  takes a widget as it is. `waiting` stays true until the first state. The
+  stock theme of this module does not draw widgets.
+- **Hits.** A theme gives one record per widget row in `hits.desktop`: an icon
+  row plus `widget = <id>`, with `entry` naming what a click opens (`opens`). A
+  left press opens that window or raises the one already open, like a tray
+  item — no selection, no drag, no double click. A right press offers Open,
+  and without an entry nothing at all (not the desktop's Properties). The
+  arrow keys walk icons only and skip widget records.
+- **Status.** `desktop.list` returns `widgets = {{id, entry, title, opens, w,
+  h, revision, waiting, stopped}}` — without the tree.
 
 ## Пиксельный хром: рамки картинками, содержимое символами
 
@@ -748,6 +842,7 @@ local ok, err = library.run({
 - Поле: `menu`; Что это: `{items, failure, open}`, либо `nil` — меню закрыто
 - Поле: `status`, `clock`; Что это: строка состояния и часы
 - Поле: `hint`; Что это: подсказка на пустом столе
+- `widgets` — desktop widgets in display order, each shaped like a view window; see "Desktop widgets"
 
 Окно в `state.windows` несёт: `id`, `title`, `x`, `y`, `w`, `h`, `window_type`
 (`app` / `dialog` / `tool`), `opened_by`, `minimized`, `maximized`, `ready`,
@@ -1055,3 +1150,52 @@ library.run({chrome = theme, logon = function(screen) … end})
 - Композитору нужно право `process.security` — оно в `desktop_runtime`.
 - `desktop.list` отдаёт `user = {id, name}`: снаружи это единственный способ
   отличить окна под пользователем от окон под служебным актором.
+
+### A window that only some people may open: `meta.requires`
+
+An entry may name the action a person needs to open it. The compositor asks
+the logged-on identity's scope (`scope:evaluate(actor, action, entry)`) before
+spawning, and refuses with the person, the entry and the action named — on
+the desktop's notice line for alt+n and the menu, in the reply for
+`desktop.open`. A desktop without logon asks nobody, as before.
+
+`window_pty` declares `requires: tui_desktop.pty`: the program runs under the
+entry's own policy (exec), that is, a shell on the server under the OS
+account, whoever logged on. An application grants the action to the people
+who may have it.
+
+## Several desktops in one runtime
+
+A runtime serving remote terminals (the `terminal.ssh` host) runs one desktop
+per connection. They answer to one family of names: a compositor claims the
+first free of `name`, `name.2` … `name.<service_slots>` (default
+`window_api.DESKTOP_SLOTS`, 16), and the registry releases a name with its
+process, so a number is reused. The process registry has no listing, so this
+rule is the directory, and it lives in one place:
+
+- `window_api.desktop_names(family, slots?)` — every name of the family;
+- `window_api.desktops(name)` — the ones running now, `{name, pid}` each,
+  the unnumbered first; a numbered name counts as its family
+  (`window_api.desktop_family`);
+- `desktop.list` answers `service` — the name this desktop claimed — and each
+  window's `pid`.
+
+Whoever addresses "the desktop" from outside (a tray item, a refresh, the
+workshop) iterates `desktops(family)`: one name would reach the first
+connection only.
+
+### A desktop whose terminal went away closes its windows
+
+A connection drops. The desktop ends as "Shut Down" does — windows closed,
+not left running with nobody to see them (a bash among them) — on either of
+two signals:
+
+- **CANCEL** (`process.event.CANCEL`): the `terminal.ssh` host asks the
+  program to finish when its client leaves; the runtime does the same when it
+  stops.
+- **A frame that could not be written.** `out:present` failing means the
+  terminal is gone; the compositor stops drawing, closes its windows and
+  exits. It used to `assert` there, and the windows outlived it.
+
+The cleanup after either writes nothing to the terminal that is gone, so the
+desktop ends with success, not with the error of a write nobody could read.

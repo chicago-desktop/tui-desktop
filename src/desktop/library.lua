@@ -44,6 +44,23 @@ local pixels = require("pixels")
 -- получателя, окно молча обращалось бы к штатному имени.
 local window_api = require("window_api")
 
+-- claim_desktop_name(family, slots) -> name | nil, reason
+--
+-- Registers the first free name of the family (window_api.desktop_names). A
+-- name is released with its process, so the number of a desktop that ended
+-- goes to the next one.
+local function claim_desktop_name(family: string, slots: any): (any, any)
+    local first_error: any = nil
+    local names: any = window_api.desktop_names(family, slots)
+    for _, name in ipairs(names) do
+        local ok, err = process.registry.register(tostring(name))
+        if ok then return tostring(name), nil end
+        first_error = first_error or err
+    end
+    return nil, "no desktop name of " .. family .. " is free (" .. tostring(#names)
+        .. " tried): " .. tostring(first_error)
+end
+
 local WINDOW_HOST = "butschster.tui_desktop:workers"
 
 -- Окно — это любая запись процесса, которая умеет писать в свой tty-порт.
@@ -93,6 +110,11 @@ local CLOCK_TICK = "15s"
 -- Двести — несколько секунд под потоком вывода и минуты в покое: хватает на
 -- p95, не хватает, чтобы старый всплеск висел в сводке вечно.
 local FRAME_WINDOW = 200
+-- The shortest gap between two frames, in milliseconds. A frame per mouse
+-- motion and per pty chunk backed the loop up until nothing — the clock
+-- included — was drawn (the owner's freeze, 2026-09-14: 2.4 cores and 1.8 MB/s
+-- to the terminal during a resize). Requests inside the gap are one frame.
+local FRAME_MS = 33
 
 -- Задержка, с которой наведение в меню раскрывает папку или закрывает
 -- подменю. Как в Windows: без неё мышь, идущая от папки к её подменю по
@@ -108,6 +130,17 @@ local HOVER_DELAY = "300ms"
 local TRAY_MAX = 6
 local TRAY_TEXT = 16
 local TRAY_KEY = 64
+
+-- Desktop widgets (FR-006 in butschster/windows): registry entries whose
+-- process the compositor spawns like the state provider of a view window,
+-- and whose published tree the theme draws in a panel under every window.
+-- The base spawns, stops and hands the list to the theme; it draws nothing.
+-- A size outside the limits is refused, not clamped: a tree laid out for
+-- another size would be another widget.
+local WIDGET_W, WIDGET_H = 20, 5
+local WIDGET_MIN_W, WIDGET_MAX_W = 10, 40
+local WIDGET_MIN_H, WIDGET_MAX_H = 2, 16
+local WIDGET_ORDER = 100
 
 -- Печатаемый текст, который агент шлёт в окно, отправляется по одной
 -- клавише: у окна нет «вставки», а `paste` доезжает до программы только
@@ -152,10 +185,15 @@ end
 --
 --   options.chrome        — тема (контракт в README). Обязательна.
 --   options.service_name  — имя, под которым композитор виден процессам.
+--   options.service_slots — how many desktops of that name may run at once
+--                           (default window_api.DESKTOP_SLOTS); each claims
+--                           the first free of name, name.2, …
 --   options.hint          — подсказка на пустом рабочем столе.
 --   options.logon         — (screen) -> identity | nil, причина. Вход до первого
 --                           кадра: identity = {actor, scope, context}, и под ней
 --                           порождается каждое окно. Подробности в README.
+--   options.widgets       — () -> {{entry, title, w, h, order, opens}, …}, failure:
+--                           desktop widgets to spawn (README, "Desktop widgets").
 local function run(options: any)
     options = type(options) == "table" and options or {}
 
@@ -210,9 +248,15 @@ local function run(options: any)
     local sized, size_error = refresh_cell_size()
     if not sized then return nil, size_error end
 
-    local SERVICE_NAME = type(options.service_name) == "string"
+    -- The name this desktop answers to: the first free one of the family.
+    -- Several run in one runtime when a terminal.ssh host gives every
+    -- connection its own desktop.
+    local SERVICE_FAMILY = type(options.service_name) == "string"
         and options.service_name ~= "" and options.service_name
         or "butschster.tui_desktop.desktop"
+    local claimed, claim_error = claim_desktop_name(SERVICE_FAMILY, options.service_slots)
+    if not claimed then return nil, claim_error end
+    local SERVICE_NAME: string = tostring(claimed)
 
     local HINT = type(options.hint) == "string" and options.hint
         or "alt+n — bash window · alt+o — programs · ctrl+q — quit"
@@ -253,6 +297,10 @@ local function run(options: any)
     -- Окно свойств самого стола — пункт «Свойства» по правой кнопке на
     -- пустом месте. Идентификатор записи; нет — нет и меню.
     local desktop_properties: any = type(options.desktop_properties) == "string" and options.desktop_properties or nil
+    -- Desktop widgets (FR-006): `() -> {{entry, title, w, h, order, opens}, …}, failure`.
+    -- The shell reads the registry and hands the list over, as it does for
+    -- desktop items; the base spawns the entries and draws nothing.
+    local read_widgets: any = type(options.widgets) == "function" and options.widgets or nil
 
     -- Восстановление окон мастерской требует права менять реестр. Оболочке
     -- под другим актором его может не быть, и тогда важно, чтобы отказ был
@@ -296,7 +344,6 @@ local function run(options: any)
 
     local lifecycle = assert(process.events())
     local inbox = process.inbox()
-    process.registry.register(SERVICE_NAME)
 
     -- Окна, собранные в рантайме, возвращаются в реестр здесь, а не фоновым
     -- сервисом: платформа намеренно запрещает процессам в группе
@@ -439,6 +486,14 @@ local function run(options: any)
     -- Перетаскивание: одна структура вместо «либо nil, либо таблица» —
     -- во второй форме поля смещения для проверяющего не существуют.
     local drag: any = {active = false, id = "", mode = "move", dx = 0, dy = 0}
+    -- The frame gate (`draw` / `draw_now` / `flush`): when the last frame was
+    -- painted, whether one is owed, how many requests it merges, and the
+    -- timer that paints it. A table, not locals: the loop and the closures
+    -- share it (the go-lua pcall trap).
+    local frame_gate: any = {last_ms = 0, dirty = false, merged = 0, timer = nil}
+    -- Set when a frame could not be written: the terminal is gone (a remote
+    -- session disconnected). The loop then shuts the desktop down.
+    local terminal_state: any = {lost = nil, cancelled = false}
     -- Меню открыто — весь ввод принадлежит ему, включая цифры: иначе выбор
     -- пункта уехал бы в окно под меню.
     local menu: any = nil
@@ -471,6 +526,13 @@ local function run(options: any)
     -- Таблицей, а не локальными: выше по кадру стоит pcall входа, а после
     -- ошибки под pcall простая локальная у цикла и у замыкания расходится.
     local meter: any = {trigger = "start", snapshot_ms = nil, total = 0, next = 1, samples = {}}
+    -- Which window was last told it has the keyboard. The composer keeps no
+    -- focus field (focus is the top visible window, see `focused`), so a
+    -- change is noticed by comparing after each frame. A table, like `meter`:
+    -- the logon pcall sits above in this frame. `notify_focus` is assigned
+    -- below `send_to`, which it needs; `draw` calls it through this name.
+    local focus_seen: any = {id = nil}
+    local notify_focus: any = nil
     local menu_hits: any = {}
     -- Таймер наведения в меню: есть только пока каскад ждёт своей смены,
     -- см. `hover_menu`. Объявлен здесь, потому что цикл кладёт его в select.
@@ -590,6 +652,167 @@ local function run(options: any)
         local changed = old.text ~= text or old.entry ~= entry or old.title ~= title
             or old.image ~= image or old.icon ~= icon
         return true, nil, changed or pruned
+    end
+
+    -- Running widgets in display order. A table, like `tray`: the logon pcall
+    -- sits above in this frame, and `sync_widgets` replaces the list.
+    local widgets: any = {items = {}, spawned = 0}
+
+    -- What widgets give the theme and the command channel. The theme gets a
+    -- view window's shape (`id`, `content_state`, `state_revision`) so the
+    -- SDK renderer takes a widget as it is; the channel gets the status
+    -- without the tree — the tree is what is drawn, not a status.
+    local function widget_view(detailed: boolean): any
+        local out = {}
+        for _, item in ipairs(widgets.items) do
+            local view: any = {id = item.id, entry = item.entry, title = item.title, opens = item.opens,
+                w = item.w, h = item.h, waiting = item.waiting == true, stopped = item.stopped == true}
+            if detailed then
+                view.revision = item.state_revision
+            else
+                view.content_state = item.content_state
+                view.state_revision = item.state_revision
+            end
+            out[#out + 1] = view
+        end
+        return out
+    end
+
+    local function widget_of(id: any): any
+        for _, item in ipairs(widgets.items) do
+            if item.id == id then return item end
+        end
+        return nil
+    end
+
+    -- A widget whose process ended — its exit, or its runner's own close: the
+    -- last tree stays, `stopped` says so, the status line names the entry, and
+    -- `desktop.refresh` spawns it again. One place for both, so the two ways
+    -- a widget stops cannot leave two different states.
+    local function stop_widget(item: any)
+        item.pid, item.stopped = nil, true
+        notice = "widget " .. tostring(item.entry) .. " stopped"
+        log:warn("widget stopped", {widget = item.id, entry = tostring(item.entry)})
+    end
+
+    -- A size in whole cells within the limits, the default when not given,
+    -- nil when refused. 12.5 and "20" are refused, not rounded or parsed.
+    local function whole_cells(value: any, default: integer, low: integer, high: integer): integer?
+        if value == nil then return default end
+        if type(value) ~= "number" then return nil end
+        local cells = math.tointeger(value)
+        if cells == nil or cells < low or cells > high then return nil end
+        return cells
+    end
+
+    -- A widget's size and the cell size reach its process as the resize event
+    -- a state provider of a view window gets.
+    local function tell_widget_size(item: any)
+        if item.pid == nil then return end
+        process.send(tostring(item.pid), "window.input", {id = item.id, event = {
+            type = "resize", width = item.w, height = item.h, cell_w = cell_w, cell_h = cell_h,
+        }})
+    end
+
+    -- Spawned exactly like the state provider of a view window: under the
+    -- logged-on user, with the compositor's name in the context, the widget id
+    -- where a window id goes and the size as the fourth argument. Answers the
+    -- reason when the spawn failed.
+    local function spawn_widget(item: any): string?
+        local pid, err = spawner(nil, {[window_api.CONTEXT_KEY] = SERVICE_NAME})
+            :spawn_monitored(tostring(item.entry), WINDOW_HOST, SERVICE_NAME, tostring(item.id), nil, {
+                width = item.w, height = item.h, cell_w = cell_w, cell_h = cell_h,
+            })
+        if not pid then
+            item.pid, item.stopped = nil, true
+            return "widget " .. tostring(item.entry) .. " did not start: " .. tostring(err)
+        end
+        item.pid, item.stopped = pid, false
+        -- A respawned widget keeps its last tree until the new process
+        -- publishes: waiting means "never had a state", not "restarting".
+        item.waiting = item.content_state == nil
+        return nil
+    end
+
+    -- sync_widgets() — bring the running widgets in line with the shell's
+    -- list (FR-006 §3): spawn new entries, respawn stopped ones, stop and
+    -- forget those that vanished. Called after logon, so that every spawn
+    -- carries the user's actor, and on `desktop.refresh`.
+    --
+    -- A size outside the limits is refused, not clamped; the reason names the
+    -- entry in the status line, the one place a person sees it.
+    local function sync_widgets()
+        if not read_widgets then return end
+        local listed, failure = read_widgets()
+        local problems = {}
+        if failure ~= nil then problems[#problems + 1] = "widgets: " .. tostring(failure) end
+        if type(listed) ~= "table" then
+            -- No list is not an empty list: stopping every widget because the
+            -- shell could not read the registry would blank the desktop over a
+            -- hiccup.
+            if #problems > 0 then notice = table.concat(problems, "; ") end
+            return
+        end
+
+        local wanted, seen = {}, {}
+        for _, spec in ipairs(listed) do
+            local entry: any = type(spec) == "table" and spec.entry or nil
+            if type(entry) ~= "string" or entry == "" then
+                problems[#problems + 1] = "a widget without an entry was not shown"
+            elseif not seen[entry] then
+                seen[entry] = true
+                local w = whole_cells(spec.w, WIDGET_W, WIDGET_MIN_W, WIDGET_MAX_W)
+                local h = whole_cells(spec.h, WIDGET_H, WIDGET_MIN_H, WIDGET_MAX_H)
+                if w == nil then
+                    problems[#problems + 1] = "widget " .. entry .. ": width " .. tostring(spec.w)
+                        .. " is not a whole number of cells from " .. WIDGET_MIN_W .. " to " .. WIDGET_MAX_W
+                elseif h == nil then
+                    problems[#problems + 1] = "widget " .. entry .. ": height " .. tostring(spec.h)
+                        .. " is not a whole number of cells from " .. WIDGET_MIN_H .. " to " .. WIDGET_MAX_H
+                else
+                    wanted[#wanted + 1] = {entry = entry, w = w, h = h,
+                        order = tonumber(spec.order) or WIDGET_ORDER,
+                        title = type(spec.title) == "string" and spec.title ~= "" and spec.title or nil,
+                        opens = type(spec.opens) == "string" and spec.opens ~= "" and spec.opens or nil}
+                end
+            end
+        end
+        table.sort(wanted, function(left: any, right: any)
+            if left.order ~= right.order then return left.order < right.order end
+            return left.entry < right.entry
+        end)
+
+        local running: any = {}
+        for _, item in ipairs(widgets.items) do running[item.entry] = item end
+        local kept = {}
+        for _, spec in ipairs(wanted) do
+            local item: any = running[spec.entry]
+            running[spec.entry] = nil
+            if item == nil then
+                widgets.spawned = widgets.spawned + 1
+                item = {id = "g" .. widgets.spawned, entry = spec.entry, pid = nil,
+                    waiting = true, stopped = false, content_state = nil, state_revision = 0}
+            end
+            local resized = item.w ~= nil and (item.w ~= spec.w or item.h ~= spec.h)
+            item.w, item.h, item.order = spec.w, spec.h, spec.order
+            item.title, item.opens = spec.title, spec.opens
+            if item.pid == nil then
+                local why = spawn_widget(item)
+                if why then problems[#problems + 1] = why end
+            elseif resized then
+                tell_widget_size(item)
+            end
+            kept[#kept + 1] = item
+        end
+        -- Vanished from the registry: stopped and forgotten. Its exit, when it
+        -- arrives, finds nobody to mark stopped.
+        for _, gone in pairs(running) do
+            if gone.pid ~= nil then process.terminate(tostring(gone.pid)) end
+        end
+        widgets.items = kept
+
+        for _, problem in ipairs(problems) do log:warn("widget not shown", {reason = problem}) end
+        if #problems > 0 then notice = table.concat(problems, "; ") end
     end
 
     local quitting = false
@@ -892,7 +1115,31 @@ local function run(options: any)
         return report
     end
 
-    local function draw()
+    -- The rect a move or resize drag would give. Windows 95 drags an OUTLINE:
+    -- the window keeps its place and size until the release, and only the
+    -- outline follows the pointer — a frame per motion then costs a dotted
+    -- rectangle, not the whole window re-laid and re-sent at a new size.
+    local function drag_outline(): any
+        if drag.active and drag.mode ~= "icon" and drag.pending ~= nil then return drag.pending end
+        return nil
+    end
+
+    -- The outline in cells for a theme without `chrome.outline`: a dotted frame.
+    local function default_outline(target: any, rect: any)
+        local x, y = math.tointeger(rect.x) or 1, math.tointeger(rect.y) or 1
+        local w, h = math.tointeger(rect.w) or 0, math.tointeger(rect.h) or 0
+        if w < 2 or h < 2 then return end
+        target:put(x, y, string.rep("┄", w), w)
+        target:put(x, y + h - 1, string.rep("┄", w), w)
+        for row = y + 1, y + h - 2 do
+            target:put(x, row, "┆", 1)
+            target:put(x + w - 1, row, "┆", 1)
+        end
+    end
+
+    -- draw_now() paints a frame at once; `draw()` (below) is how everything
+    -- asks for one.
+    local function draw_now()
         local started = time.now():unix_nano()
         canvas:clear(" ")
 
@@ -900,6 +1147,9 @@ local function run(options: any)
         -- Считается до ветвления по `top`: после if/else линтер держит его
         -- сужённым и поле `id` для него уже не существует.
         local focused_id = top and top.id or nil
+        -- One list for both modes and every call of the frame: `fill` and
+        -- `paint` must see the same widgets in the same order.
+        local widget_list: any = widget_view(false)
 
         desk_hits = {}
         if not PIXELS then
@@ -912,6 +1162,7 @@ local function run(options: any)
                 items = desk.items,
                 failure = desk.failure,
                 selected = selected_id,
+                widgets = widget_list,
             })
             if type(painted) == "table" then desk_hits = painted end
 
@@ -937,6 +1188,7 @@ local function run(options: any)
                     items = desk.items,
                     failure = desk.failure,
                     selected = selected_id,
+                    widgets = widget_list,
                 })
                 if type(filled) == "table" then desk_hits = filled end
             end
@@ -970,6 +1222,11 @@ local function run(options: any)
                 menu = menu and {items = menu.items, failure = menu.failure,
                     open = menu.open, cursor = menu.cursor, anchor = menu.anchor} or nil,
                 status = status, notice = notice, clock = clock, tray = tray_view(false), hint = HINT,
+                widgets = widget_list,
+                -- A move or resize drag's pending rect: the theme draws its
+                -- outline over everything (a theme that does not know the
+                -- field shows nothing until the release).
+                outline = drag_outline(),
             }, cell_w, cell_h)
 
             local complaints
@@ -1017,6 +1274,12 @@ local function run(options: any)
                     menu.open, menu.cursor, menu.anchor)
                 if type(hits) == "table" then menu_hits = hits end
             end
+
+            local outline = drag_outline()
+            if outline then
+                if type(chrome.outline) == "function" then chrome.outline(canvas, outline)
+                else default_outline(canvas, outline) end
+            end
         end
 
         -- Аппаратный курсор один на экран, поэтому его получает только
@@ -1031,8 +1294,18 @@ local function run(options: any)
             }
         end
 
+        -- A terminal that is gone fails the write. That is not a crash:
+        -- nothing can be shown any more, so the loop shuts the desktop down
+        -- as "Shut Down" does, and the windows are closed rather than left
+        -- behind with nobody to see them.
+        if terminal_state.lost then return end
         local painted_at = time.now():unix_nano()
-        local stats = assert(out:present(canvas:rows(), {cursor = cursor, images = images}))
+        local stats, present_error = out:present(canvas:rows(), {cursor = cursor, images = images})
+        if not stats then
+            terminal_state.lost = tostring(present_error)
+            frame_gate.dirty, frame_gate.merged = false, 0
+            return
+        end
         local presented_at = time.now():unix_nano()
         frame_cost = {
             changed_rows = stats.changed_rows,
@@ -1052,6 +1325,41 @@ local function run(options: any)
             snapshot_ms = meter.snapshot_ms,
         }
         record_frame(frame_cost, presented_at)
+        frame_gate.last_ms = presented_at // 1000000
+        frame_gate.dirty, frame_gate.merged = false, 0
+        if notify_focus then notify_focus() end
+    end
+
+    -- draw() — asks for a frame. The first request after FRAME_MS of quiet is
+    -- painted at once, so a single click or key shows at once; the requests
+    -- inside the gap only mark the frame owed, and the frame timer (in the
+    -- loop's select) paints them as ONE frame: a drag's motions, a progress
+    -- bar's lines and several windows' states cost a frame per FRAME_MS.
+    local function draw()
+        local now = time.now():unix_nano() // 1000000
+        if frame_gate.timer == nil and now - frame_gate.last_ms >= FRAME_MS then
+            draw_now()
+            return
+        end
+        frame_gate.dirty = true
+        frame_gate.merged = frame_gate.merged + 1
+        if frame_gate.timer == nil then
+            local wait = math.tointeger(math.max(1, FRAME_MS - (now - frame_gate.last_ms))) or 1
+            frame_gate.timer = time.after(string.format("%dms", wait))
+        end
+    end
+
+    -- flush() — an owed frame is painted now. What reads the frame — a
+    -- press or a key (the hits), the `screen` command — must see the last
+    -- state, not the one before the batch.
+    local function flush()
+        if not frame_gate.dirty then return end
+        -- The frame is the owed batch's, and the report says so; the event
+        -- being handled keeps its own name for the frame it may draw next.
+        local was = meter.trigger
+        meter.trigger = "batch:" .. tostring(frame_gate.merged)
+        draw_now()
+        meter.trigger = was
     end
 
     -- open_window(spec, from) — `from` это отправитель команды. Если он
@@ -1079,6 +1387,21 @@ local function run(options: any)
         end
         if type(spec.window_type) == "string" and programs.TYPES[spec.window_type] then
             window_type = spec.window_type
+        end
+
+        -- An entry may name the action a person needs to open it
+        -- (`meta.requires`). A window whose own policy grants what the person
+        -- lacks — a shell on the server — must not open for everyone who logs
+        -- on. The question goes to the logged-on identity's scope; a desktop
+        -- without logon runs under its own actor and asks nobody, as before.
+        local requires: any = record and type(record.meta) == "table" and record.meta.requires or nil
+        if type(requires) == "string" and requires ~= "" and IDENTITY ~= nil then
+            local verdict = IDENTITY.scope:evaluate(IDENTITY.actor, requires, entry)
+            if verdict ~= "allow" then
+                local context: any = type(IDENTITY.context) == "table" and IDENTITY.context or {}
+                local who = context.user_name or context.user_id or "the logged-on user"
+                return nil, tostring(who) .. " may not open " .. entry .. " (it needs " .. requires .. ")"
+            end
         end
 
         -- Размер: у окна с фиксированным размером — ТОЛЬКО из записи, что бы
@@ -1153,6 +1476,8 @@ local function run(options: any)
                 -- а не показывает вчерашнее и не висит.
                 waiting = state_ref ~= nil,
                 state_revision = 0,
+                -- As for a process window: `desktop.list` reports it.
+                args = type(spec.args) == "string" and spec.args ~= "" and spec.args or nil,
                 x = x, y = y, w = w, h = h,
                 view = nil, updates = nil, pid = nil,
                 rows = {}, cursor = nil, revision = -1,
@@ -1233,6 +1558,12 @@ local function run(options: any)
             title = type(spec.title) == "string" and spec.title ~= "" and spec.title
                 or (entry == PTY_WINDOW and command or (declared and declared.title or entry)),
             command = command,
+            -- The argument the window was opened with, as `desktop.list`
+            -- reports it: an opener finds a window already open for the same
+            -- thing (a folder window for the same path) and focuses it
+            -- instead of opening a second one. A bash window's command is
+            -- `command`, not this.
+            args = type(spec.args) == "string" and spec.args ~= "" and spec.args or nil,
             x = x, y = y, w = w, h = h,
             view = view, updates = updates, pid = pid,
             rows = {}, cursor = nil, revision = -1,
@@ -1253,9 +1584,22 @@ local function run(options: any)
 
     -- Закрытие: сначала вежливо, потом по сроку. Окно, ещё не позвавшее
     -- tty.start(), ввод не принимает — его гасим сразу.
-    local function close_window(window)
-        if window.closing then return end
+    -- `how` is "request" (the default: the ×, ctrl+w, a plain `desktop.close`)
+    -- or "force" (shutdown, `desktop.close{force = true}`). A request sends
+    -- `close` and waits: the window may refuse — Notepad asks to save a
+    -- changed document — and when the grace runs out it stays open and the
+    -- status line says so. A force kills after the grace, as before. A PTY
+    -- window has no loop that could answer: every close of it is a force.
+    local function close_window(window, how: any?)
+        local mode = how == "force" and "force" or "request"
+        if window.entry == PTY_WINDOW then mode = "force" end
+        if window.closing then
+            -- Shutdown over a pending request: it stops waiting for a yes.
+            if mode == "force" then window.close_how = "force" end
+            return
+        end
         window.closing = true
+        window.close_how = mode
         -- Диалог без своего окна — сирота: он объявлен принадлежащим номеру,
         -- которого больше нет, и на столе остаётся предмет, о котором никто
         -- не помнит, откуда он.
@@ -1264,7 +1608,7 @@ local function run(options: any)
         -- а тот ловит окно, умершее само. Без здешнего диалог висел бы на
         -- столе всё время вежливого срока — до трёх секунд после того, как
         -- его окно попросили закрыться.
-        for _, child in ipairs(children_of(window.id)) do close_window(child) end
+        for _, child in ipairs(children_of(window.id)) do close_window(child, mode) end
 
         -- Both transports receive close and the same grace period for cleanup.
         if window.content == "pixels" then
@@ -1290,7 +1634,8 @@ local function run(options: any)
         if window.view then window.view:close() end
         -- Окно могло умереть само, не дождавшись вежливого закрытия: его
         -- диалоги остались бы на столе привязанными к номеру, которого нет.
-        for _, child in ipairs(children_of(window.id)) do close_window(child) end
+        -- A dialog of a window that is gone may not refuse: force.
+        for _, child in ipairs(children_of(window.id)) do close_window(child, "force") end
     end
 
     local function request_quit()
@@ -1300,7 +1645,25 @@ local function run(options: any)
         -- Closing a view can remove it and its children synchronously.
         local closing = {}
         for _, window in ipairs(windows) do closing[#closing + 1] = window end
-        for index = #closing, 1, -1 do close_window(closing[index]) end
+        -- Shutdown does not ask: a window that would refuse is killed after
+        -- the grace, or the desktop would never go away.
+        for index = #closing, 1, -1 do close_window(closing[index], "force") end
+    end
+
+    -- raise_open(entry) -> whether a window of that entry was already open
+    --
+    -- The tray, the taskbar clock and desktop widgets name a window rather
+    -- than launch a program: a second click must bring back the window the
+    -- first one opened, minimised or covered, not open a second copy.
+    local function raise_open(entry: any): boolean
+        for _, candidate in ipairs(windows) do
+            if candidate.entry == entry and not candidate.closing then
+                candidate.minimized = false
+                raise(candidate)
+                return true
+            end
+        end
+        return false
     end
 
     local function activate_menu_item(item: any)
@@ -1309,6 +1672,9 @@ local function run(options: any)
             request_quit()
             return
         end
+        -- `raise` marks an item that names a window rather than a program to
+        -- start again: Open in a widget's context menu does what its click does.
+        if item.raise == true and raise_open(item.entry) then return end
         local window, err = open_window({
             entry = item.entry, title = item.title, w = item.w, h = item.h,
             args = item.args, window_type = item.window_type, image = item.image,
@@ -1338,11 +1704,19 @@ local function run(options: any)
         return items
     end
 
+    -- resized_rect(window, w, h) -> {x, y, w, h}: the window at that size,
+    -- clamped to the screen. One rule for the resize itself and for the
+    -- outline a resize drag shows before its release.
+    local function resized_rect(window, w: any, h: any): any
+        local nw = clamp(tonumber(w) or window.w, MIN_W, width)
+        local nh = clamp(tonumber(h) or window.h, MIN_H, desktop_height())
+        return {w = nw, h = nh, x = clamp(window.x, 1, math.max(1, width - nw + 1)),
+            y = clamp(window.y, desktop_top, math.max(desktop_top, height - nh))}
+    end
+
     local function resize_window(window, w: any, h: any)
-        window.w = clamp(tonumber(w) or window.w, MIN_W, width)
-        window.h = clamp(tonumber(h) or window.h, MIN_H, desktop_height())
-        window.x = clamp(window.x, 1, math.max(1, width - window.w + 1))
-        window.y = clamp(window.y, desktop_top, math.max(desktop_top, height - window.h))
+        local rect = resized_rect(window, w, h)
+        window.w, window.h, window.x, window.y = rect.w, rect.h, rect.x, rect.y
         -- У вида viewport'а нет: его размер — это просто числа, по которым
         -- тема рисует в следующем кадре.
         if window.view then
@@ -1393,6 +1767,31 @@ local function run(options: any)
         return ok and true or false
     end
 
+    -- Focus changes reach the windows as the runtime's own terminal event,
+    -- `{type = "focus", focused = …}` — the shape `tty.events()` delivers when
+    -- the physical terminal gains or loses focus — so a window reads one event
+    -- whatever moved the keyboard. Without it a window never learns it lost
+    -- the keyboard: an armed button or a captured scrollbar waits for a
+    -- release that now goes to another window (windows-module sdk-review A11).
+    --
+    -- The loser hears first, then the winner. The winner is remembered only
+    -- once the send succeeded: a window that has not drawn its first frame is
+    -- not `ready`, `send_to` drops the event, and it is told on the next frame
+    -- instead of never. A PTY window forwards the event to its session, and
+    -- the runtime's PTY proxy writes \e[I / \e[O only when the program inside
+    -- asked for focus reports (mode 1004): bash gets nothing, vim its report.
+    notify_focus = function()
+        local top = focused()
+        local now = top and top.id or nil
+        if now == focus_seen.id then return end
+        if focus_seen.id ~= nil then
+            local before = find(focus_seen.id)
+            focus_seen.id = nil
+            if before then send_to(before, {type = "focus", focused = false}) end
+        end
+        if top and send_to(top, {type = "focus", focused = true}) then focus_seen.id = now end
+    end
+
     -- ─── ввод ────────────────────────────────────────────────────────────
 
     local function hit(x, y)
@@ -1437,6 +1836,31 @@ local function run(options: any)
         return send_to(window, {type = "mouse", action = event.action, button = event.button,
             x = event.x - window.x - insets.left + 1, y = event.y - window.y - insets.top + 1,
             alt = event.alt, ctrl = event.ctrl, shift = event.shift})
+    end
+    -- Plain motion — no button held, nothing captured — goes to the focused
+    -- window when the pointer is over its client, once per cell: an SDK menu
+    -- follows the pointer by it, as the Start menu does here. Over the frame,
+    -- another window or the desktop nothing is sent, and leaving the client
+    -- forgets the cell, so coming back to it is news again. The last cell lives
+    -- on the window record, not in an upvalue: an error under pcall in go-lua
+    -- splits upvalues from their owner.
+    local function pointer_motion(event: any)
+        local window: any = focused()
+        if not window then return end
+        local left = math.tointeger(insets.left) or 1
+        local top = math.tointeger(insets.top) or 1
+        if event.x < window.x + left or event.x >= window.x + window.w - (math.tointeger(insets.right) or 1)
+            or event.y < window.y + top or event.y >= window.y + window.h - (math.tointeger(insets.bottom) or 1) then
+            window.motion_cell = nil
+            return
+        end
+        local x, y = event.x - window.x - left + 1, event.y - window.y - top + 1
+        local cell = tostring(x) .. ":" .. tostring(y)
+        if window.motion_cell == cell then return end
+        if send_to(window, {type = "mouse", action = "motion", button = event.button, x = x, y = y,
+            alt = event.alt, ctrl = event.ctrl, shift = event.shift}) then
+            window.motion_cell = cell
+        end
     end
     -- Наведение в открытом меню. Строка под мышью становится выбранной сразу,
     -- а каскад — папка раскрывается, подменю глубже строки закрывается — через
@@ -1528,11 +1952,15 @@ local function run(options: any)
         if event.action == "motion" and drag.active then
             local window = find(drag.id)
             if not window then drag.active = false; return end
+            -- Only the outline follows the pointer (`drag_outline`); the
+            -- window takes the rect on the release. The resize keeps G2's
+            -- offset from the corner (`drag.dx`).
             if drag.mode == "move" then
-                window.x = clamp(event.x - drag.dx, 1, math.max(1, width - window.w + 1))
-                window.y = clamp(event.y - drag.dy, desktop_top, math.max(desktop_top, height - window.h))
+                drag.pending = {w = window.w, h = window.h,
+                    x = clamp(event.x - drag.dx, 1, math.max(1, width - window.w + 1)),
+                    y = clamp(event.y - drag.dy, desktop_top, math.max(desktop_top, height - window.h))}
             else
-                resize_window(window, event.x - window.x + 1, event.y - window.y + 1)
+                drag.pending = resized_rect(window, event.x + drag.dx - window.x + 1, event.y + drag.dy - window.y + 1)
             end
             draw()
             return
@@ -1540,6 +1968,9 @@ local function run(options: any)
 
         if event.action == "motion" then
             if menu and not drag.active and not quitting then hover_menu(event.x, event.y) end
+            -- The Start menu lies over the windows: while it is open the
+            -- pointer is its.
+            if not menu and not quitting then pointer_motion(event) end
             return
         end
 
@@ -1572,7 +2003,19 @@ local function run(options: any)
                 draw()
                 return
             end
-            if drag.active then drag.active = false; draw() end
+            if drag.active then
+                -- The release applies the outline: one move, one resize (and
+                -- one resize event to the program inside), however long the drag.
+                drag.active = false
+                local window = find(drag.id)
+                local pending: any = drag.pending
+                drag.pending = nil
+                if window and pending then
+                    if drag.mode == "resize" then resize_window(window, pending.w, pending.h)
+                    else window.x, window.y = pending.x, pending.y end
+                end
+                draw()
+            end
             return
         end
 
@@ -1616,9 +2059,17 @@ local function run(options: any)
             -- Это то же меню, что «Пуск», только с плоским списком и якорем:
             -- тема кладёт панель у якоря, а не над панелью задач.
             if event.button == "right" and not window then
-                local spot = desktop_spot(event.x, event.y)
+                local spot: any = desktop_spot(event.x, event.y)
                 local items: any = {}
-                if spot and spot.id then
+                if spot and spot.widget ~= nil then
+                    -- A widget (FR-006 §5): Open when it names a window, and
+                    -- nothing otherwise — not the desktop's Properties, which
+                    -- the empty-desktop branch below would give a widget
+                    -- record without an id. No selection either.
+                    if type(spot.entry) == "string" and spot.entry ~= "" then
+                        items = {{label = "Open", bold = true, entry = spot.entry, raise = true}}
+                    end
+                elseif spot and spot.id then
                     selected_id = spot.id
                     items = context_items(spot)
                 elseif event.y >= desktop_top and event.y <= desktop_last
@@ -1693,19 +2144,7 @@ local function run(options: any)
                     end
                     draw()
                 elseif type(spot.entry) == "string" and spot.entry ~= "" then
-                    local existing = nil
-                    for _, candidate in ipairs(windows) do
-                        if candidate.entry == spot.entry and not candidate.closing then
-                            existing = candidate
-                            break
-                        end
-                    end
-                    if existing then
-                        existing.minimized = false
-                        raise(existing)
-                    else
-                        activate_menu_item(spot)
-                    end
+                    if not raise_open(spot.entry) then activate_menu_item(spot) end
                     draw()
                 end
                 return
@@ -1717,12 +2156,27 @@ local function run(options: any)
             -- Пустое место: под окнами лежит стол со значками. Одиночный
             -- щелчок выделяет и берёт значок, двойной открывает.
             notice = ""
+            -- `any`: after the widget branch below the linter narrows a plain
+            -- local to `false?` and then refuses every field of an icon.
+            local spot: any = desktop_spot(event.x, event.y)
+            -- A widget is not an icon (FR-006 §5): a press opens the window it
+            -- names, or raises the one already open, as a tray caption does.
+            -- No selection, no drag and no double-click bookkeeping.
+            if spot and spot.widget ~= nil then
+                if type(spot.entry) == "string" and spot.entry ~= "" and not raise_open(spot.entry) then
+                    -- Only the entry: the record's title, w and h describe the
+                    -- widget, not the window it opens.
+                    activate_menu_item({entry = spot.entry})
+                end
+                draw()
+                return
+            end
+
             local moment = time.now():unix_nano()
             local repeated = last_click.x == event.x and last_click.y == event.y
                 and (moment - last_click.at) < 500000000
             last_click = {x = event.x, y = event.y, at = moment}
 
-            local spot = desktop_spot(event.x, event.y)
             if not spot then
                 if selected_id then selected_id = nil; draw() end
                 return
@@ -1776,10 +2230,16 @@ local function run(options: any)
             return
         end
 
-        -- Правый нижний угол рамки тянет размер — если запись это разрешила.
-        if window.resizable ~= false
-            and event.x == window.x + window.w - 1 and event.y == window.y + window.h - 1 then
-            drag = {active = true, id = window.id, mode = "resize", dx = 0, dy = 0}
+        -- The bottom-right corner of the frame drags the size, if the entry
+        -- allows it: the last TWO cells of the bottom row, where the theme
+        -- draws the Windows 95 sizing grip (13×13 px reaches into the second
+        -- cell at a 10×20 cell). `dx` is how far the press is from the corner,
+        -- so a window taken by the second-to-last cell does not lose a column
+        -- on the first motion.
+        local corner_x = window.x + window.w - 1
+        if window.resizable ~= false and event.y == window.y + window.h - 1
+            and event.x >= corner_x - 1 and event.x <= corner_x then
+            drag = {active = true, id = window.id, mode = "resize", dx = corner_x - event.x, dy = 0}
             draw()
             return
         end
@@ -1898,7 +2358,9 @@ local function run(options: any)
         local spots = {}
         for _, hit in ipairs(desk_hits) do
             local id = hit.id
-            if type(id) == "string" and id ~= "" then
+            -- Widget records share the desktop group but are not icons: the
+            -- arrows walk the icon grid only (FR-006 §5).
+            if type(id) == "string" and id ~= "" and hit.widget == nil then
                 local row = math.tointeger(hit.row) or 0
                 local col = math.tointeger(hit.from) or 0
                 local at = seen[id]
@@ -1956,7 +2418,8 @@ local function run(options: any)
 
     local function open_selected_icon()
         for _, hit in ipairs(desk_hits) do
-            if hit.id == selected_id and type(hit.entry) == "string" and hit.entry ~= "" then
+            if hit.id == selected_id and hit.widget == nil
+                and type(hit.entry) == "string" and hit.entry ~= "" then
                 local opened = open_window({
                     entry = hit.entry, title = hit.title,
                     w = hit.w, h = hit.h, args = hit.args,
@@ -1977,6 +2440,13 @@ local function run(options: any)
             return "handled"
         end
         if quitting then return "handled" end
+        -- Esc during a move or resize drops the outline: the window stays
+        -- where it was, as in Windows 95.
+        if drag.active and drag.mode ~= "icon" and event.key_type == "esc" then
+            drag.active, drag.pending = false, nil
+            draw()
+            return "handled"
+        end
         if menu then
             menu.pending = nil
             hover_timer = nil
@@ -2060,7 +2530,12 @@ local function run(options: any)
             if event.key == "n" then
                 local window, err = open_window({}, nil)
                 if window then raise(window) end
-                if err then log:error("window did not open", {error = tostring(err)}) end
+                -- Said on the desktop, not only in the log: a person refused a
+                -- shell would otherwise see a key that does nothing.
+                if err then
+                    notice = "could not open: " .. tostring(err)
+                    log:error("window did not open", {error = tostring(err)})
+                end
                 draw()
                 return "handled"
             elseif event.key == "w" and top then
@@ -2087,7 +2562,11 @@ local function run(options: any)
     local function describe(window)
         return {
             id = window.id, entry = window.entry, title = window.title, command = window.command,
+            -- The window's process: whoever watches a desktop close can see
+            -- its windows go, not only the desktop.
+            pid = window.pid ~= nil and tostring(window.pid) or nil,
             image = window.image,
+            args = window.args,
             window_type = window.window_type,
             opened_by = window.opened_by,
             -- Чем рисуется содержимое и дождалось ли оно данных. Снаружи это
@@ -2192,6 +2671,9 @@ local function run(options: any)
     end
 
     local function handle_command(topic, body, from: any)
+        -- What reads the frame reads the last state: the list reports what
+        -- the painted hits and the frame meter say, the screen what is shown.
+        if topic == "desktop.list" or topic == "desktop.screen" then flush() end
         local to = ""
         if type(body.reply_to) == "string" then to = body.reply_to end
         local window = find(type(body.id) == "string" and body.id or "")
@@ -2205,6 +2687,9 @@ local function run(options: any)
             local top = focused()
             reply({ok = true, windows = list, focused = top and top.id or nil,
                 screen = {width = width, height = height},
+                -- The name this desktop claimed: several run at once under a
+                -- terminal.ssh host, one per connection.
+                service = SERVICE_NAME,
                 -- Размер ячейки в пикселях и режим кадра: окно «Свойства:
                 -- Экран» показывает разрешение по ним, а само их снять не
                 -- может — терминал отвечает только композитору.
@@ -2250,6 +2735,9 @@ local function run(options: any)
                 -- Трей с владельцами и остатком срока: «пункт не появился» и
                 -- «появился, а тема его не нарисовала» иначе неотличимы.
                 tray = tray_view(true),
+                -- Widgets without their trees: "not spawned", "waiting for
+                -- its first state" and "stopped" differ here and nowhere else.
+                widgets = widget_view(true),
                 restore = restore_report}, to, topic)
             return pruned
         end
@@ -2267,7 +2755,11 @@ local function run(options: any)
 
         if topic == "desktop.refresh" then
             reload_desktop()
-            reply({ok = true, items = #desk.items, failure = desk.failure}, to, topic)
+            -- Widgets follow the registry on the same command: new entries
+            -- are spawned, vanished ones stopped, stopped ones respawned.
+            sync_widgets()
+            reply({ok = true, items = #desk.items, failure = desk.failure,
+                widgets = #widgets.items}, to, topic)
             return true
         end
 
@@ -2308,6 +2800,62 @@ local function run(options: any)
         -- неизвестная команда отвечала «нет окна nil», отправитель шёл искать
         -- опечатку в идентификаторе, которого не посылал, а ветка про
         -- неизвестную команду была недостижима вовсе.
+        -- The state of a widget (FR-006 §3), accepted only from the process
+        -- the compositor spawned for it — the rule of view windows: nobody
+        -- else can draw into a widget. Widget ids are `g<n>`, never `w<n>`.
+        -- So is its close: the SDK runner sends `desktop.close` with its id
+        -- when its loop ends. From the widget's own process that is the widget
+        -- stopping; answered "no window" it would sit in the status line as a
+        -- refusal nobody made a mistake to earn.
+        local widget: any = (topic == "desktop.state" or topic == "desktop.close") and widget_of(body.id) or nil
+        if widget then
+            if widget.pid == nil or from == nil or tostring(widget.pid) ~= tostring(from) then
+                if topic == "desktop.close" then
+                    return refuse("widget " .. widget.id .. " is closed only by its own process", to, topic, from)
+                end
+                return refuse("the state of widget " .. widget.id .. " is accepted only from its provider",
+                    to, topic, from)
+            end
+            if topic == "desktop.close" then
+                stop_widget(widget)
+                reply({ok = true}, to, topic)
+                return true
+            end
+            widget.content_state = body.state
+            widget.waiting = false
+            widget.state_revision = (math.tointeger(widget.state_revision) or 0) + 1
+            reply({ok = true, revision = widget.state_revision}, to, topic)
+            return true
+        end
+
+        -- A refused close (C2): the window's own process answers the `close`
+        -- it got by staying — a changed document to save — and the request is
+        -- over, with no "did not close" on the taskbar. The sender names the
+        -- window: a cells window's runner does not know its id. Only that
+        -- process may refuse; a given `id` must name the same window, and a
+        -- forced close (shutdown) is not refused.
+        if topic == "desktop.close" and body.refused == true then
+            local own: any = nil
+            for _, candidate in ipairs(windows) do
+                if from ~= nil and ((candidate.pid ~= nil and tostring(candidate.pid) == tostring(from))
+                    or (candidate.state_pid ~= nil and tostring(candidate.state_pid) == tostring(from))) then
+                    own = candidate
+                    break
+                end
+            end
+            if own == nil or (type(body.id) == "string" and body.id ~= "" and body.id ~= own.id) then
+                return refuse("only a window's own process may refuse its close", to, topic, from)
+            end
+            if own.close_how == "force" then
+                return refuse("a forced close is not refused", to, topic, from)
+            end
+            own.closing = false
+            own.close_how = nil
+            own.deadline = nil
+            reply({ok = true}, to, topic)
+            return true
+        end
+
         if not WINDOW_COMMANDS[topic] then
             return refuse("unknown command " .. tostring(topic), to, topic, from)
         end
@@ -2318,7 +2866,10 @@ local function run(options: any)
         end
 
         if topic == "desktop.close" then
-            close_window(window); reply({ok = true}, to, topic); return true
+            -- A request unless the sender says `force`: a window may refuse a
+            -- request (it answers the `close` it gets by not closing).
+            close_window(window, body.force == true and "force" or "request")
+            reply({ok = true}, to, topic); return true
         elseif topic == "desktop.focus" then
             window.minimized = false; raise(window); reply({ok = true}, to, topic); return true
         elseif topic == "desktop.move" then
@@ -2354,6 +2905,9 @@ local function run(options: any)
             end
             window.content_state = body.state
             if type(body.title) == "string" and body.title ~= "" then window.title = body.title end
+            -- The title-bar picture, the same way: a name replaces it, no name
+            -- (or an empty one) keeps the one the window has.
+            if type(body.image) == "string" and body.image ~= "" then window.image = body.image end
             window.waiting = false
             window.state_revision = (math.tointeger(window.state_revision) or 0) + 1
             reply({ok = true, revision = window.state_revision}, to, topic)
@@ -2409,6 +2963,8 @@ local function run(options: any)
 
     tick_clock()
     reload_desktop()
+    -- After logon (above): a widget's process runs under the user, like a window.
+    sync_widgets()
     draw()
 
     local ticker = time.after(CLOCK_TICK)
@@ -2421,6 +2977,7 @@ local function run(options: any)
             ticker:case_receive(),
         }
         if hover_timer then cases[#cases + 1] = hover_timer:case_receive() end
+        if frame_gate.timer then cases[#cases + 1] = frame_gate.timer:case_receive() end
         local watched = {}
         for _, window in ipairs(windows) do
             -- У окна-вида кадров нет: их некому публиковать.
@@ -2453,6 +3010,13 @@ local function run(options: any)
             if ticked or pruned then draw() end
             handled = true
         end
+        -- The owed frame: every request since the last one, painted once.
+        if frame_gate.timer ~= nil and selected.channel == frame_gate.timer then
+            frame_gate.timer = nil
+            meter.trigger = "batch:" .. tostring(frame_gate.merged)
+            if frame_gate.dirty then draw_now() end
+            handled = true
+        end
         if hover_timer ~= nil and selected.channel == hover_timer then
             meter.trigger = "hover"
             settle_hover()
@@ -2479,8 +3043,21 @@ local function run(options: any)
             end
             if window.deadline and selected.channel == window.deadline then
                 meter.trigger = "deadline"
-                process.terminate(tostring(window.state_pid or window.pid))
                 window.deadline = nil
+                -- One way to force: `close_how`. Shutdown sets it on every
+                -- window, a pending request included (`close_window` raises it).
+                if window.close_how == "force" then
+                    process.terminate(tostring(window.state_pid or window.pid))
+                else
+                    -- A request the window did not answer by closing: it
+                    -- refused (a document to save) or it hangs. Either way it
+                    -- stays, and says so — killing it would lose the document,
+                    -- and a silent stay would read as a dead ×.
+                    window.closing = false
+                    window.close_how = nil
+                    notice = tostring(window.title or window.id) .. " did not close"
+                    draw()
+                end
                 handled = true
                 break
             end
@@ -2499,9 +3076,34 @@ local function run(options: any)
             elseif selected.channel == lifecycle then
                 local event = selected.value
                 meter.trigger = "exit"
+                if event.kind == process.event.CANCEL then
+                    -- Asked to finish: the remote terminal left (terminal.ssh)
+                    -- or the runtime is stopping. Shut down as "Shut Down"
+                    -- does: the windows are closed, not left orphaned.
+                    meter.trigger = "cancel"
+                    -- The terminal may already be gone: the cleanup below
+                    -- must not fail on it.
+                    terminal_state.cancelled = true
+                    if not quitting then
+                        request_quit()
+                        draw()
+                    end
+                    if #windows == 0 then break end
+                end
                 if event.kind == process.event.EXIT then
                     local gone = tostring(event.from)
+                    -- A widget's process: the last tree stays, the theme says
+                    -- "stopped" over it, and `desktop.refresh` spawns it again.
+                    local widget_stopped = false
+                    for _, item in ipairs(widgets.items) do
+                        if item.pid ~= nil and tostring(item.pid) == gone then
+                            stop_widget(item)
+                            widget_stopped = true
+                            break
+                        end
+                    end
                     for index = #windows, 1, -1 do
+                        if widget_stopped then break end
                         local window = windows[index]
                         if window == nil then break end
                         if window.pid ~= nil and tostring(window.pid) == gone then
@@ -2554,12 +3156,24 @@ local function run(options: any)
                             resize_window(window, window.w, window.h)
                         end
                     end
+                    -- A widget keeps its cells, but the pixels of a cell may
+                    -- have changed with the font.
+                    for _, item in ipairs(widgets.items) do tell_widget_size(item) end
                     out:invalidate()
                     draw()
                 elseif event.type == "mouse" then
+                    -- A press or a release is aimed at what is on screen: an
+                    -- owed frame is painted first, so the hits are its.
+                    -- Motion and the wheel stay batched.
+                    if event.action ~= "motion" and event.action ~= "wheel" then flush() end
                     handle_mouse(event)
                     if quitting and #windows == 0 then break end
                 elseif event.type == "key" then
+                    -- An open menu's keys read the painted menu (its hits
+                    -- carry the marked row): its owed frame first. A key for a
+                    -- window needs no frame — and one squeezed in before it put
+                    -- a focus report into the window's pty just ahead of the key.
+                    if menu ~= nil then flush() end
                     local verdict = handle_key(event)
                     if verdict == "quit" or (quitting and #windows == 0) then break end
                     if verdict == "forward" and not quitting then
@@ -2570,13 +3184,18 @@ local function run(options: any)
                 end
             end
         end
+        if terminal_state.lost and not quitting then
+            log:warn("the terminal is gone; shutting the desktop down", {error = terminal_state.lost})
+            request_quit()
+        end
+        if terminal_state.lost and #windows == 0 then break end
     end
 
     -- Прощание: «Теперь питание компьютера можно отключить». Рисует тема,
     -- если умеет (`chrome.farewell`), держится `chrome.FAREWELL_HOLD` секунд
     -- (по умолчанию пять), ввод за это время съедается — экран не для
     -- взаимодействия. Тема без прощания выходит сразу, как раньше.
-    if farewell_wanted and #windows == 0 and type(chrome.farewell) == "function" then
+    if farewell_wanted and not terminal_state.lost and #windows == 0 and type(chrome.farewell) == "function" then
         canvas:clear(" ")
         local painted = chrome.farewell(canvas, width, height)
         local images: any = nil
@@ -2596,10 +3215,22 @@ local function run(options: any)
         if window.view then window.view:close() end
         if window.state_pid then process.terminate(tostring(window.state_pid)) end
     end
+    for _, item in ipairs(widgets.items) do
+        if item.pid then process.terminate(tostring(item.pid)) end
+    end
     process.registry.unregister(SERVICE_NAME)
-    assert(tty.mouse(false))
-    assert(out:close())
-    assert(tty.stop())
+    if terminal_state.lost or terminal_state.cancelled then
+        -- Nothing to restore on a terminal that is gone — lost, or the
+        -- reason for the cancel: every write fails, and the desktop ended
+        -- as asked, not with an error.
+        tty.mouse(false)
+        out:close()
+        tty.stop()
+    else
+        assert(tty.mouse(false))
+        assert(out:close())
+        assert(tty.stop())
+    end
 end
 
 return {run = run}

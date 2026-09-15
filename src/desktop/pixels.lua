@@ -113,7 +113,9 @@ function pixels.frame(canvas: any, painted: any)
             complaints[#complaints + 1] = "placement " .. placement.id .. " is named twice"
         else
             seen[placement.id] = true
-            pixels.blank_under(canvas, placement)
+            -- An overlay (a drag's outline) is transparent but for its line:
+            -- the text under it must stay, so its cells are not blanked.
+            if entry.overlay ~= true then pixels.blank_under(canvas, placement) end
             images[#images + 1] = placement
         end
     end

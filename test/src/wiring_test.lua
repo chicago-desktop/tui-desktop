@@ -1722,6 +1722,16 @@ local function define_tests()
             test.eq(#grouped.desktop, 0)
             test.eq(#grouped.menu, 0)
         end)
+
+        test.it("widget records pass through the desktop group unchanged", function()
+            local hits = pixels.hits({hits = {desktop = {
+                {row = 4, from = 79, to = 98, widget = "g1", entry = "app:window", title = "Memory"},
+            }}})
+            test.eq(#hits.desktop, 1)
+            test.eq(hits.desktop[1].widget, "g1")
+            test.eq(hits.desktop[1].entry, "app:window")
+            test.eq(hits.desktop[1].title, "Memory")
+        end)
     end)
 
     test.describe("butschster.tui_desktop стрелки в режиме символов", function()
@@ -1949,7 +1959,9 @@ local function define_tests()
             deadline = time.now():unix_nano() + 5000000000
             while time.now():unix_nano() < deadline do
                 seen = ask_on(provider, "probe.report", {}, "probe.state")
-                if tostring(seen.inputs) ~= "" then break end
+                -- The click, not the first input: the provider also hears the
+                -- compositor's focus event now, and it can arrive first.
+                if tostring(seen.inputs):find("mouse:", 1, true) then break end
                 channel.select({time.after("100ms"):case_receive()})
             end
             test.is_true(tostring(seen.inputs):find("mouse:5,4", 1, true) ~= nil,

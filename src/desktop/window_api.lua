@@ -41,6 +41,39 @@ api.normalize_event = input.normalize
 api.CONTEXT_KEY = CONTEXT_KEY
 api.DEFAULT_SERVICE = DEFAULT_SERVICE
 
+-- Several desktops can run in one runtime: a terminal.ssh host gives every
+-- connection its own. They answer to `name`, `name.2` … `name.<slots>`; a
+-- compositor claims the first free one, and the registry releases a name
+-- with its process, so a number is reused. The registry has no listing, so
+-- whoever looks for every desktop asks each name — by this one rule.
+api.DESKTOP_SLOTS = 16
+
+-- desktop_names(family, slots?) -> {family, family.2, …}
+function api.desktop_names(family: string, slots: any?): any
+    local count = math.tointeger(tonumber(slots)) or api.DESKTOP_SLOTS
+    local names: any = {family}
+    for index = 2, count do names[#names + 1] = family .. "." .. tostring(index) end
+    return names
+end
+
+-- desktop_family("x.shell.3") -> "x.shell": the family a claimed name belongs to.
+function api.desktop_family(name: string): string
+    local family = string.match(name, "^(.-)%.%d+$")
+    return family or name
+end
+
+-- desktops(name) -> {{name, pid}, …}: the desktops of that name's family
+-- running now, the unnumbered one first.
+function api.desktops(name: string): any
+    local found: any = {}
+    for _, candidate in ipairs(api.desktop_names(api.desktop_family(name))) do
+        local name = tostring(candidate)
+        local pid = process.registry.lookup(name)
+        if pid then found[#found + 1] = {name = name, pid = pid} end
+    end
+    return found
+end
+
 -- Топик, на котором композитор отвечает. Одна константа на обе стороны:
 -- механика берёт её отсюда же.
 api.REPLY_TOPIC = "desktop.reply"
@@ -279,8 +312,15 @@ end
 -- окно, которое держит канал в своём `select`, узнаёт, что `close` или `focus`
 -- не выполнились, и не морозит себя ради этого. Окну, которое канал не
 -- создавало, отказ приходит обычным сообщением в inbox.
-function api.close(id)
-    return call("desktop.close", {id = id})
+-- A close is a request the window may refuse; `opts.force = true` kills it
+-- after the grace instead (the compositor's shutdown path). `opts.refused =
+-- true` is the window's own answer to a request: it stays, and the request is
+-- over without a notice. The compositor knows the window by the sending
+-- process, so a cells window's runner, which has no window id, passes nil.
+function api.close(id, opts: any?)
+    local given: any = type(opts) == "table" and opts or {}
+    return call("desktop.close", {id = id, force = given.force == true or nil,
+        refused = given.refused == true or nil})
 end
 
 function api.focus(id)
@@ -290,8 +330,12 @@ end
 -- State providers use the same owner and command channel as TTY windows.
 -- No reply is requested for frames: feeding replies back into drawing would loop.
 function api.publish_state(id, state: any)
+    -- `title` and `image` of the state travel beside it: the compositor's
+    -- window record takes them for the title bar (a folder window that
+    -- navigates in place changes both).
     local ok, err = call("desktop.state", {id = id, state = state,
-        title = type(state) == "table" and state.title or nil})
+        title = type(state) == "table" and state.title or nil,
+        image = type(state) == "table" and state.image or nil})
     return ok, err
 end
 

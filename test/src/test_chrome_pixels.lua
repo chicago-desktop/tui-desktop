@@ -43,18 +43,10 @@ function chrome.title_button_at(window, x: any, y: any)
     return nil
 end
 
--- Заливка стола — ЯЧЕЙКАМИ, и в пиксельном режиме тоже: иначе тело окна
--- просвечивает столом там, где программа внутри ничего не написала, а сам стол
--- держится на цвете терминала, а не на своём.
-function chrome.fill(canvas: any, width, height, state: any)
-    local row = string.rep("▒", math.tointeger(width) or 0)
-    for line = math.tointeger(state.top) or 1, math.tointeger(state.bottom) or 1 do
-        canvas:put(1, line, row, width)
-    end
-
-    -- Значок даёт ДВЕ строки попаданий — рисунок и подпись, как у настоящей
-    -- темы. Композитор обязан свести их в один значок: иначе стрелка вниз
-    -- уходила бы с рисунка на его же подпись.
+-- Значок даёт ДВЕ строки попаданий — рисунок и подпись, как у настоящей
+-- темы. Композитор обязан свести их в один значок: иначе стрелка вниз
+-- уходила бы с рисунка на его же подпись.
+local function icon_hits(state: any): any
     local hits = {}
     for _, item in ipairs(state.items or {}) do
         local x = math.tointeger(item.x) or 1
@@ -68,6 +60,72 @@ function chrome.fill(canvas: any, width, height, state: any)
         end
     end
     return hits
+end
+
+-- Desktop widgets (FR-006): a column at the right edge, the first on the
+-- icons' first row, one empty row between them. The layout is this test's;
+-- the real one is the shell's. Exposed so the cell test theme stands its
+-- widgets on the same cells.
+function chrome.widget_rects(width: any, state: any): any
+    local rects = {}
+    local y = (math.tointeger(state.top) or 1) + 2
+    local list: any = type(state.widgets) == "table" and state.widgets or {}
+    for _, widget in ipairs(list) do
+        local w = math.tointeger(widget.w) or 1
+        local h = math.tointeger(widget.h) or 1
+        rects[#rects + 1] = {widget = widget, x = (math.tointeger(width) or 80) - w + 1, y = y, w = w, h = h}
+        y = y + h + 1
+    end
+    return rects
+end
+
+-- One hit record per widget row: the icon-row shape plus `widget = <id>`,
+-- with `entry` naming what a click opens (FR-006 §5). `with_id` adds an id,
+-- as a theme may: the compositor must still not take a widget for an icon.
+function chrome.widget_hits(width: any, state: any, with_id: boolean): any
+    local hits = {}
+    for _, rect in ipairs(chrome.widget_rects(width, state)) do
+        for line = 0, rect.h - 1 do
+            hits[#hits + 1] = {
+                row = rect.y + line, from = rect.x, to = rect.x + rect.w - 1,
+                widget = rect.widget.id, entry = rect.widget.opens, title = rect.widget.title,
+                id = with_id and ("widget:" .. tostring(rect.widget.id)) or nil,
+            }
+        end
+    end
+    return hits
+end
+
+-- Everything the theme was given about each widget, one line per widget from
+-- row WIDGET_MARK_ROW down: the screen is the only place the theme's state
+-- can be read from outside the compositor. Row 14, because the stock cell
+-- theme writes its empty-desktop hint on the middle row (12 of 24). `note` is
+-- what the widget's process published; the last field is its life.
+chrome.WIDGET_MARK_ROW = 14
+function chrome.mark_widgets(canvas: any, state: any)
+    local list: any = type(state.widgets) == "table" and state.widgets or {}
+    for index, widget in ipairs(list) do
+        local published: any = widget.content_state
+        local note = type(published) == "table" and published.note or "-"
+        local life = widget.stopped == true and "stopped" or (widget.waiting == true and "waiting" or "live")
+        local text = "W" .. index .. ":" .. tostring(widget.id)
+            .. "|" .. tostring(widget.w) .. "x" .. tostring(widget.h)
+            .. "|" .. tostring(widget.title) .. "|" .. tostring(widget.opens)
+            .. "|" .. tostring(note) .. "|" .. life
+        canvas:put(2, chrome.WIDGET_MARK_ROW + index - 1, text, 58)
+    end
+end
+
+-- Заливка стола — ЯЧЕЙКАМИ, и в пиксельном режиме тоже: иначе тело окна
+-- просвечивает столом там, где программа внутри ничего не написала, а сам стол
+-- держится на цвете терминала, а не на своём.
+function chrome.fill(canvas: any, width, height, state: any)
+    local row = string.rep("▒", math.tointeger(width) or 0)
+    for line = math.tointeger(state.top) or 1, math.tointeger(state.bottom) or 1 do
+        canvas:put(1, line, row, width)
+    end
+    chrome.mark_widgets(canvas, state)
+    return icon_hits(state)
 end
 
 -- Кнопка «Пуск» на панели задач и строка, с которой начинается меню. Числа
@@ -183,9 +241,20 @@ function chrome.paint(state: any, cell_w, cell_h)
         hit.bottom_row = hit.row + 1
     end
 
+    -- Widget records exist only here, never in `fill`'s hits: a widget click
+    -- that works in pixel mode proves `paint` got `state.widgets`. The icons
+    -- come along, because the compositor takes `paint`'s desktop hits over
+    -- `fill`'s whenever there are any.
+    local desktop = {}
+    local widget_rows = chrome.widget_hits(state.width, state, true)
+    if #widget_rows > 0 then
+        for _, hit in ipairs(icon_hits(state)) do desktop[#desktop + 1] = hit end
+        for _, hit in ipairs(widget_rows) do desktop[#desktop + 1] = hit end
+    end
+
     return {
         placements = placements,
-        hits = {desktop = {}, bars = slots, menu = choices},
+        hits = {desktop = desktop, bars = slots, menu = choices},
     }
 end
 

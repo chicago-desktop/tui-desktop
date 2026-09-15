@@ -118,12 +118,49 @@ entries:
       comment: Композитор с пиксельным хромом на viewport теста.
     source: file://test_composer_pixels.lua
     method: main
-    modules: [channel, env, json, logger, process, registry, sql, time, tty]
+    modules: [channel, env, json, logger, process, registry, security, sql, time, tty]
     imports:
       library: butschster.tui_desktop.desktop:library
       pixel_chrome: app:pixel_chrome
       flat_chrome: app:flat_chrome
       cell_chrome: butschster.tui_desktop.desktop:chrome
+      widget_cells: app:widget_cells_chrome
+
+  - name: widget_cells_chrome
+    kind: library.lua
+    meta:
+      comment: The stock cell theme plus the widget marks and hit records of the pixel test theme — widgets must reach fill in cells mode too.
+    source: file://test_chrome_cells.lua
+    imports:
+      stock: butschster.tui_desktop.desktop:chrome
+      pixel_chrome: app:pixel_chrome
+
+  # Desktop widgets (FR-006): the compositor spawns these the way it spawns the
+  # state provider of a view window. One source, three entries, because a
+  # running widget is keyed by its entry.
+  - name: widget_alpha
+    kind: process.lua
+    meta:
+      comment: A widget process for the tests — publishes a state naming its id and size, and again on request.
+    source: file://widget_probe.lua
+    method: main
+    modules: [channel, process, time]
+
+  - name: widget_beta
+    kind: process.lua
+    meta:
+      comment: A second widget process for the tests, the same source under another entry.
+    source: file://widget_probe.lua
+    method: main
+    modules: [channel, process, time]
+
+  - name: widget_gamma
+    kind: process.lua
+    meta:
+      comment: A third widget process for the tests — the entry that appears only on desktop.refresh.
+    source: file://widget_probe.lua
+    method: main
+    modules: [channel, process, time]
 
   - name: painter_window
     kind: process.lua
@@ -347,3 +384,296 @@ entries:
         value: app:processes
       - name: wippy.bootloader:env_storage
         value: app:env_storage
+
+  # Focus probe window: draws a frame and forwards every focus event to the
+  # test under its own name (the open argument).
+  - name: focus_probe
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Focus probe
+      in_menu: false
+      comment: A window that reports every focus event it receives, in order, to the test.
+    source: file://focus_probe.lua
+    method: main
+    modules: [channel, process, time, tty]
+
+  - name: window_focus_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: The compositor tells the window that lost the keyboard and the one that got it, on open and on minimize, in order and without repeats.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_focus_test.lua
+    modules: [channel, process, time, tty, registry]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  - name: widgets_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: Desktop widgets on a live compositor — spawned from the shell's list in order, a bad size refused by entry, state only from their own process, stopped and respawned on refresh, drawn in both modes, clicked like a tray item.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://widgets_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  # A view window with no state provider: the theme draws it, nothing is
+  # spawned for it, and no shared name gets registered.
+  - name: args_view
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Args view
+      in_menu: false
+      window_content: pixels
+      render: app:probe_render
+      comment: A view window without a state provider, for window_args_test — its record keeps the args it was opened with.
+    source: file://idle_window.lua
+    method: main
+    modules: [channel, time]
+
+  - name: window_args_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: The window description reports the args a window was opened with — a process window and a view window, in desktop.open and desktop.list — so an opener can focus the window already open for the same thing.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_args_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  # Motion probe window: reports every mouse and focus event to the watcher
+  # named in its argument ("<watcher>|<label>") — never a fixed shared name.
+  - name: motion_probe
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Motion probe
+      in_menu: false
+      comment: A window that reports every mouse and focus event it receives to the test's own watcher.
+    source: file://motion_probe.lua
+    method: main
+    modules: [channel, process, time, tty]
+
+  - name: window_resize_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: The size handle is the last two cells of the bottom frame row and keeps the pointer's offset; the third cell does nothing, and a window with resizable false ignores the handle.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_resize_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  - name: window_outline_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: A move or resize drag shows an outline and the window takes its rect on the release; Esc drops the outline; a burst of motions is a few frames, named batch, not one per motion.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_outline_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  - name: pixels_overlay_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: pixels.frame blanks the cells under a picture but not under an overlay — a drag's outline is transparent but for its line, and the text under it stays.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://pixels_overlay_test.lua
+    modules: [tty]
+    imports:
+      test: wippy.test:test
+      pixels: butschster.tui_desktop.desktop:pixels
+    method: run
+
+  - name: desktop_slots_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: Several desktops of one name claim name, name.2, …; a freed name is taken again; window_api.desktops finds every one running.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://desktop_slots_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+      desktop: butschster.tui_desktop.desktop:window_api
+    method: run
+
+  # What a logged-on person needs to open a shell (window_pty's meta.requires).
+  - name: pty_allowed
+    kind: security.policy
+    meta:
+      comment: Lets a test identity open a PTY window.
+    policy:
+      actions: [tui_desktop.pty]
+      resources: "*"
+      effect: allow
+
+  - name: desktop_requires_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: A window whose entry names meta.requires opens only for a logged-on identity whose scope allows that action; a shell is refused to a person without it, with the reason.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://desktop_requires_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  - name: desktop_cancel_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: A cancel shuts the desktop down with its windows closed, not left orphaned.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://desktop_cancel_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  # A window whose entry fixes its size, for the size handle test.
+  - name: fixed_window
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Fixed window
+      in_menu: false
+      width: 24
+      height: 8
+      resizable: false
+      comment: A window without a frame or input whose entry declares resizable false.
+    source: file://idle_window.lua
+    method: main
+    modules: [channel, time]
+
+  - name: window_motion_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: Plain mouse motion reaches only the focused window's client, in client cells, once per cell — nothing over the frame, the desktop or another window; leaving the client forgets the cell.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_motion_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  # A view window whose provider publishes the title and picture the test asks
+  # for; the provider reports to the watcher named in the window's argument —
+  # never a fixed shared name.
+  - name: image_provider
+    kind: process.lua
+    meta:
+      comment: A view window's state provider that publishes the title and image the test asks for, through window_api.publish_state.
+    source: file://image_provider.lua
+    method: main
+    modules: [channel, process, time]
+    imports:
+      desktop: butschster.tui_desktop.desktop:window_api
+
+  - name: image_view
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Image view
+      image: drive
+      in_menu: false
+      window_content: pixels
+      render: app:probe_render
+      state: app:image_provider
+      comment: A view window for window_image_test — its provider changes the title and the title-bar picture.
+    source: file://idle_window.lua
+    method: main
+    modules: [channel, time]
+
+  - name: window_image_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: A view window's published state carries image beside title — the title-bar picture changes, desktop.list reports it, and an absent or empty image keeps the one the window has.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_image_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  # A window that ignores `close` — the stand-in for an application that
+  # refuses a close request.
+  - name: stubborn_window
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Stubborn
+      in_menu: false
+      comment: A window that starts its terminal and ignores every close — only a kill ends it.
+    source: file://stubborn_window.lua
+    method: main
+    modules: [channel, time, tty]
+
+  - name: window_close_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: A close is a request a window may refuse — it stays with a notice after the grace; a window that closes itself goes; a PTY window closes as before; force and shutdown kill after the grace.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_close_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run
+
+  # A window that answers every close by refusing it through window_api, and
+  # reports the closes it got to the watcher named in its argument.
+  - name: refusing_window
+    kind: process.lua
+    meta:
+      type: tui_desktop.window
+      title: Refuser
+      in_menu: false
+      comment: A window that answers every close with desktop.close{refused = true} from its own process and stays.
+    source: file://refusing_window.lua
+    method: main
+    modules: [channel, process, time, tty, ctx]
+    imports:
+      desktop: butschster.tui_desktop.desktop:window_api
+
+  - name: window_refuse_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: A close refused by the window's own process ends the request without a notice and the next close asks again; a refusal from any other process is refused and changes nothing.
+      group: TUI Desktop
+      suite: butschster_tui_desktop
+    source: file://window_refuse_test.lua
+    modules: [channel, process, time, tty]
+    imports:
+      test: wippy.test:test
+    method: run

@@ -47,6 +47,10 @@ local function main(desktop, window_id)
             })
         elseif topic == "window.input" then
             local event: any = body.event or {}
+            -- A close is a request a window may refuse; this provider has
+            -- nothing to keep, so it answers the way a real one does — by
+            -- ending (the SDK runner and the image viewer's provider do too).
+            if event.type == "close" then break end
             if event.type == "resize" then last_resize = event end
             inputs[#inputs + 1] = tostring(event.type) .. ":"
                 .. tostring(event.x) .. "," .. tostring(event.y)

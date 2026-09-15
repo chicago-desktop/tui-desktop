@@ -9,12 +9,31 @@ local library = require("library")
 local pixel_chrome = require("pixel_chrome")
 local cell_chrome = require("cell_chrome")
 local flat_chrome = require("flat_chrome")
+local widget_cells = require("widget_cells")
+local channel = require("channel")
+local time = require("time")
+local security = require("security")
 
 local function split(text)
     local out = {}
     for piece in tostring(text):gmatch("[^|]+") do out[#out + 1] = piece end
     return out
 end
+
+local function body_of(message: any)
+    local body: any = message:payload()
+    if type(body) == "userdata" then body = body:data() end
+    if type(body) == "table" and body[1] ~= nil and #body > 0 then body = body[1] end
+    return type(body) == "table" and body or {}
+end
+
+-- The widgets the shell would list from the registry: two good ones out of
+-- order and one too wide, which must be refused by its entry, not clamped.
+local WIDGETS = {
+    {entry = "app:widget_alpha", title = "Alpha", w = 20, h = 4, order = 20, opens = "app:menu_target"},
+    {entry = "app:widget_beta", title = "Beta", w = 12, h = 3, order = 10},
+    {entry = "app:widget_wide", title = "Too wide", w = 41, h = 4, order = 30},
+}
 
 local function main(args)
     local parts = split(args)
@@ -74,6 +93,48 @@ local function main(args)
     elseif kind == "cells_theme" then
         options.chrome = cell_chrome
         options.cell_size = function() return 10, 20 end
+    elseif kind == "user" or kind == "admin" then
+        -- Logged on at once: a person without rights of their own, or one
+        -- whose scope allows a shell (`app:pty_allowed`).
+        options.cell_size = function() return 10, 20 end
+        options.logon = function()
+            local policies: any = {}
+            if kind == "admin" then
+                local allowed, perr = security.policy("app:pty_allowed")
+                if not allowed then return nil, "policy app:pty_allowed: " .. tostring(perr) end
+                policies = {allowed}
+            end
+            return {
+                actor = security.new_actor("test:desk-user"),
+                scope = security.new_scope(policies),
+                context = {user_id = "u1", user_name = "Tester"},
+            }, nil
+        end
+    elseif kind == "widgets" then
+        options.cell_size = function() return 10, 20 end
+    elseif kind == "cells_widgets" then
+        -- Cells mode with widgets: `fill` is called at the other place of
+        -- the frame and must get `state.widgets` there too.
+        options.chrome = widget_cells
+        options.pixels = false
+    end
+
+    -- Widgets (FR-006): the list starts as WIDGETS and changes when the test
+    -- sends `test.widgets` to this process before `desktop.refresh` — the
+    -- only way to change from outside what `options.widgets` answers. The
+    -- topic is listened to, so the compositor's inbox never sees it.
+    if kind == "widgets" or kind == "cells_widgets" then
+        local changes = process.listen("test.widgets", {message = true})
+        local list: any = {current = WIDGETS}
+        options.widgets = function()
+            while true do
+                local picked = channel.select({changes:case_receive(), time.after("50ms"):case_receive()})
+                if not picked.ok or picked.channel ~= changes then break end
+                local given: any = body_of(picked.value).widgets
+                list.current = type(given) == "table" and given or {}
+            end
+            return list.current, nil
+        end
     end
 
     local ok, err = library.run(options)
