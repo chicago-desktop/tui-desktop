@@ -10,8 +10,8 @@ local process = require("process")
 local time = require("time")
 local tty = require("tty")
 
-local SERVICE = "windows.tui_desktop.test.focus"
-local WATCHER = "windows.tui_desktop.test.focus_watcher"
+local SERVICE = "chicago.tui_desktop.test.focus"
+local WATCHER = "chicago.tui_desktop.test.focus_watcher"
 
 local function body_of(message: any): any
     local body: any = message:payload()
@@ -91,7 +91,7 @@ local function joined(list: any): string
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop window focus", function()
+    test.describe("chicago.tui_desktop window focus", function()
         test.it("tells the old window it lost the keyboard and the new one it has it, on open and on minimize", function()
             local inbox = process.inbox()
             process.registry.register(WATCHER)

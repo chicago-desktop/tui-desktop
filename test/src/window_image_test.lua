@@ -1,5 +1,5 @@
 -- A view window's published state carries `image` beside `title` (FR-008 §3
--- of windows/shell): a folder window that navigates in place changes its
+-- of chicago/shell): a folder window that navigates in place changes its
 -- title-bar picture. The provider publishes through the real
 -- `window_api.publish_state`; `desktop.list` shows what the window record
 -- took. An absent or empty image keeps the picture the window has.
@@ -98,9 +98,9 @@ local function listed(desk: any, id: string, revision: integer): any
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop published title-bar picture", function()
+    test.describe("chicago.tui_desktop published title-bar picture", function()
         test.it("a published image replaces the title-bar picture; an absent or empty one keeps it", function()
-            local desk = boot("windows.tui_desktop.test.image")
+            local desk = boot("chicago.tui_desktop.test.image")
             local inbox = process.inbox()
             local opened: any = ask(desk, "desktop.open",
                 {entry = "app:image_view", args = desk.watcher, w = 30, h = 8, x = 2, y = 2})

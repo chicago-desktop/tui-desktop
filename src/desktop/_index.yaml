@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: windows.tui_desktop.desktop
+namespace: chicago.tui_desktop.desktop
 
 entries:
   - name: input
@@ -22,9 +22,9 @@ entries:
     meta: {comment: "Bounded scrolling and shared scrollbar geometry."}
     source: file://scroll.lua
     imports:
-      geometry: windows.tui_desktop.desktop:geometry
+      geometry: chicago.tui_desktop.desktop:geometry
 
-  # windows.tui_desktop.desktop:chrome
+  # chicago.tui_desktop.desktop:chrome
   - name: chrome
     kind: library.lua
     meta:
@@ -33,28 +33,28 @@ entries:
     modules:
       - tty
 
-  # windows.tui_desktop.desktop:programs
+  # chicago.tui_desktop.desktop:programs
   - name: programs
     kind: library.lua
     meta:
       comment: What a registry entry says about its program — the window type and the "show in the menu" flag. Pure tables, not a single call into the runtime.
     source: file://programs.lua
 
-  # windows.tui_desktop.desktop:pixels
+  # chicago.tui_desktop.desktop:pixels
   - name: pixels
     kind: library.lua
     meta:
       comment: Assembling the pixel frame — spaces under pictures, parsing placements and hits. Pure arithmetic, not a single call into the runtime.
     source: file://pixels.lua
 
-  # windows.tui_desktop.desktop:window_api
+  # chicago.tui_desktop.desktop:window_api
   - name: window_api
     kind: library.lua
     meta:
       comment: What a window can ask of the desktop — open, close, raise a neighbouring window. The compositor's name is taken from the process context, not from a constant.
     source: file://window_api.lua
     imports:
-      input: windows.tui_desktop.desktop:input
+      input: chicago.tui_desktop.desktop:input
     modules:
       - process
       # A window reads the name of its compositor from here. The module is declared HERE, not
@@ -68,7 +68,7 @@ entries:
       - channel
       - time
 
-  # windows.tui_desktop.desktop:library
+  # chicago.tui_desktop.desktop:library
   #
   # The compositor's mechanics without the look. A second shell calls it with its own theme:
   # that way the look changes without copying window hosting, the PTY and the command channel.
@@ -88,15 +88,15 @@ entries:
       - time
       - tty
     imports:
-      repo: windows.tui_desktop.persist:repo
-      apps: windows.tui_desktop.persist:apps
-      programs: windows.tui_desktop.desktop:programs
-      pixels: windows.tui_desktop.desktop:pixels
+      repo: chicago.tui_desktop.persist:repo
+      apps: chicago.tui_desktop.persist:apps
+      programs: chicago.tui_desktop.desktop:programs
+      pixels: chicago.tui_desktop.desktop:pixels
       # For the sake of one key: the compositor's name is put into a window's context under the
       # same name the window reads it by.
-      window_api: windows.tui_desktop.desktop:window_api
+      window_api: chicago.tui_desktop.desktop:window_api
 
-  # windows.tui_desktop.desktop:desktop
+  # chicago.tui_desktop.desktop:desktop
   - name: desktop
     kind: process.lua
     meta:
@@ -105,12 +105,12 @@ entries:
         name: desktop
         short: Windowing desktop in the terminal
         security:
-          actor: {id: windows.tui_desktop.desktop:desktop}
+          actor: {id: chicago.tui_desktop.desktop:desktop}
           policies:
-            - windows.tui_desktop.security:desktop_runtime
+            - chicago.tui_desktop.security:desktop_runtime
             # The window storage reads the database name from the environment (persist:repo), and without
             # this permission it silently takes the default.
-            - windows.tui_desktop.security:storage_env
+            - chicago.tui_desktop.security:storage_env
     source: file://desktop.lua
     method: main
     modules:
@@ -124,10 +124,10 @@ entries:
       - time
       - tty
     imports:
-      library: windows.tui_desktop.desktop:library
-      chrome: windows.tui_desktop.desktop:chrome
+      library: chicago.tui_desktop.desktop:library
+      chrome: chicago.tui_desktop.desktop:chrome
 
-  # windows.tui_desktop.desktop:window_pty
+  # chicago.tui_desktop.desktop:window_pty
   - name: window_pty
     kind: process.lua
     meta:
@@ -136,7 +136,7 @@ entries:
       group: Programs
       # There is no icon here on purpose: the base has its own only for the "program" kind, and
       # it is the default for the kind anyway. An icon named here would take
-      # PRIORITY over the shell's declaration (`windows.program_images`), that is,
+      # PRIORITY over the shell's declaration (`chicago.program_images`), that is,
       # the shell could not give the window its own — and icon names are its package.
       width: 80
       height: 24
@@ -152,4 +152,4 @@ entries:
       - exec
       - tty
     security:
-      policies: [windows.tui_desktop.security:desktop_runtime]
+      policies: [chicago.tui_desktop.security:desktop_runtime]

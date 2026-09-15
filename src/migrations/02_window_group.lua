@@ -11,26 +11,26 @@
 -- stays distinguishable from "said: root", as with entries from files.
 
 return require("migration").define(function()
-    migration("Add menu_group to windows_tui_desktop_windows", function()
+    migration("Add menu_group to chicago_tui_desktop_windows", function()
         database("postgres", function()
             up(function(db)
                 local _, err = db:execute([[
-                    ALTER TABLE windows_tui_desktop_windows
+                    ALTER TABLE chicago_tui_desktop_windows
                         ADD COLUMN menu_group TEXT NOT NULL DEFAULT ''
                 ]])
                 if err then error("Failed to add menu_group: " .. err) end
             end)
-            down(function(db) db:execute("ALTER TABLE windows_tui_desktop_windows DROP COLUMN menu_group") end)
+            down(function(db) db:execute("ALTER TABLE chicago_tui_desktop_windows DROP COLUMN menu_group") end)
         end)
         database("sqlite", function()
             up(function(db)
                 local _, err = db:execute([[
-                    ALTER TABLE windows_tui_desktop_windows
+                    ALTER TABLE chicago_tui_desktop_windows
                         ADD COLUMN menu_group TEXT NOT NULL DEFAULT ''
                 ]])
                 if err then error("Failed to add menu_group: " .. err) end
             end)
-            down(function(db) db:execute("ALTER TABLE windows_tui_desktop_windows DROP COLUMN menu_group") end)
+            down(function(db) db:execute("ALTER TABLE chicago_tui_desktop_windows DROP COLUMN menu_group") end)
         end)
     end)
 end)

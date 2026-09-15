@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: windows.tui_desktop.persist
+namespace: chicago.tui_desktop.persist
 
 # Storage of windows built in the runtime.
 #
@@ -11,7 +11,7 @@ namespace: windows.tui_desktop.persist
 # compositor runs under its own actor and has its own permissions.
 
 entries:
-  # windows.tui_desktop.persist:repo
+  # chicago.tui_desktop.persist:repo
   - name: repo
     kind: library.lua
     meta:
@@ -22,7 +22,7 @@ entries:
       - env
       - json
 
-  # windows.tui_desktop.persist:apps
+  # chicago.tui_desktop.persist:apps
   - name: apps
     kind: library.lua
     meta:

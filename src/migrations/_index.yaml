@@ -1,8 +1,8 @@
 version: "1.0"
-namespace: windows.tui_desktop.migrations
+namespace: chicago.tui_desktop.migrations
 
 entries:
-  # windows.tui_desktop.migrations:01_create_windows
+  # chicago.tui_desktop.migrations:01_create_windows
   - name: 01_create_windows
     kind: function.lua
     meta:
@@ -15,7 +15,7 @@ entries:
       migration: wippy.migration:migration
     method: migrate
 
-  # windows.tui_desktop.migrations:02_window_group
+  # chicago.tui_desktop.migrations:02_window_group
   - name: 02_window_group
     kind: function.lua
     meta:
@@ -28,7 +28,7 @@ entries:
       migration: wippy.migration:migration
     method: migrate
 
-  # windows.tui_desktop.migrations:03_window_spec
+  # chicago.tui_desktop.migrations:03_window_spec
   - name: 03_window_spec
     kind: function.lua
     meta:

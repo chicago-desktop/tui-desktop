@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: windows.tui_desktop.security
+namespace: chicago.tui_desktop.security
 
 # The permissions are split into three, not merged into one "anything goes":
 # the compositor needs to spawn processes and launch programs, the command
@@ -7,7 +7,7 @@ namespace: windows.tui_desktop.security
 # endpoints is granted by the application.
 
 entries:
-  # windows.tui_desktop.security:desktop_runtime
+  # chicago.tui_desktop.security:desktop_runtime
   - name: desktop_runtime
     kind: security.policy
     meta:
@@ -42,7 +42,7 @@ entries:
       resources: "*"
       effect: allow
 
-  # windows.tui_desktop.security:storage_env
+  # chicago.tui_desktop.security:storage_env
   #
   # One variable, not "*": the application may reassign the name of the
   # database where the windows are kept. The permission is narrow on purpose —
@@ -61,7 +61,7 @@ entries:
         - TUI_DESKTOP_DB_ID
       effect: allow
 
-  # windows.tui_desktop.security:desktop_command_channel
+  # chicago.tui_desktop.security:desktop_command_channel
   - name: desktop_command_channel
     kind: security.policy
     meta:
@@ -74,7 +74,7 @@ entries:
       resources: "*"
       effect: allow
 
-  # windows.tui_desktop.security:desktop_endpoint_access
+  # chicago.tui_desktop.security:desktop_endpoint_access
   - name: desktop_endpoint_access
     kind: security.policy
     meta:
@@ -82,20 +82,20 @@ entries:
     groups: []
     policy:
       resources:
-        - windows.tui_desktop.api:*
+        - chicago.tui_desktop.api:*
       actions: access
       effect: allow
 
-  # windows.tui_desktop.security:user_security_scope
+  # chicago.tui_desktop.security:user_security_scope
   - name: user_security_scope
     kind: ns.requirement
     meta:
       comment: The application's security group that is given access to the desktop endpoints.
     targets:
-      - entry: windows.tui_desktop.security:desktop_endpoint_access
+      - entry: chicago.tui_desktop.security:desktop_endpoint_access
         path: ".groups +="
 
-  # windows.tui_desktop.security:workshop_scope
+  # chicago.tui_desktop.security:workshop_scope
   #
   # The workshop and the loader: read the registry, apply a version to it,
   # read and write a storage row. Permissions to spawn processes and
@@ -115,7 +115,7 @@ entries:
       resources: "*"
       effect: allow
 
-  # windows.tui_desktop.security:app_window_scope
+  # chicago.tui_desktop.security:app_window_scope
   #
   # A window built in the runtime. It draws itself and reads data, but does not
   # spawn processes, launch programs or change the registry: the window's code

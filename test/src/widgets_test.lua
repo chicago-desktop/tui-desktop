@@ -144,7 +144,7 @@ end
 local function define_tests()
     test.describe("desktop widgets", function()
         test.it("spawns the listed widgets in order and refuses a bad size by its entry", function()
-            local desk = boot("windows.tui_desktop.test.widgets.spawn", "widgets")
+            local desk = boot("chicago.tui_desktop.test.widgets.spawn", "widgets")
 
             local listing = wait_listing(desk, both_live, "both widgets published their first state")
             test.eq(entries_of(listing), "app:widget_beta,app:widget_alpha", "order first, then the entry")
@@ -175,7 +175,7 @@ local function define_tests()
         end)
 
         test.it("takes a widget's state only from its process, marks a stopped one and respawns it on refresh", function()
-            local desk = boot("windows.tui_desktop.test.widgets.life", "widgets")
+            local desk = boot("chicago.tui_desktop.test.widgets.life", "widgets")
             local prefix = desk.service .. ".widget."
             wait_listing(desk, both_live, "both widgets published their first state")
 
@@ -232,7 +232,7 @@ local function define_tests()
         end)
 
         test.it("takes a widget's own close as its stop and refuses anyone else's", function()
-            local desk = boot("windows.tui_desktop.test.widgets.close", "widgets")
+            local desk = boot("chicago.tui_desktop.test.widgets.close", "widgets")
             local prefix = desk.service .. ".widget."
             wait_listing(desk, both_live, "both widgets published their first state")
 
@@ -262,7 +262,7 @@ local function define_tests()
         end)
 
         test.it("open or raise their window on a click, offer Open only with it, and never act as icons", function()
-            local desk = boot("windows.tui_desktop.test.widgets.hits", "widgets")
+            local desk = boot("chicago.tui_desktop.test.widgets.hits", "widgets")
             wait_listing(desk, both_live, "both widgets published their first state")
 
             -- The arrows walk icons only. From i2 (row 4) the one thing further
@@ -329,7 +329,7 @@ local function define_tests()
         end)
 
         test.it("reach fill in cells mode too, and a click there opens the window", function()
-            local desk = boot("windows.tui_desktop.test.widgets.cells", "cells_widgets")
+            local desk = boot("chicago.tui_desktop.test.widgets.cells", "cells_widgets")
             local listing = wait_listing(desk, both_live, "both widgets published their first state")
             test.eq(listing.pixels, false, "this composer draws in cells")
             -- The stock theme drew these frames with `widgets` in its state; the

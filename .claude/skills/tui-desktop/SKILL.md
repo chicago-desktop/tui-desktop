@@ -1,6 +1,6 @@
 ---
 name: tui-desktop
-description: Drive the windows of a live windows/tui-desktop desktop through its command channel — open a window with a program, type into it, read its screen, move or close a window, start the desktop itself.
+description: Drive the windows of a live chicago/tui-desktop desktop through its command channel — open a window with a program, type into it, read its screen, move or close a window, start the desktop itself.
 ---
 
 # Driving the desktop
@@ -100,7 +100,7 @@ Such a window is opened like any other — by the `entry` from the response.
 ## Starting the desktop
 
 ```bash
-wippy run --host windows.tui_desktop:terminal desktop
+wippy run --host chicago.tui_desktop:terminal desktop
 ```
 
 `--host` is required: the CLI's terminal host autodetection counts

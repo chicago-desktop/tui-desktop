@@ -1,4 +1,4 @@
--- The window description reports `args` (FR-008 §3 of windows/shell).
+-- The window description reports `args` (FR-008 §3 of chicago/shell).
 --
 -- A folder window opens with its path in `args`; opening the same folder
 -- again must raise that window, not open a second one, and the opener can
@@ -70,9 +70,9 @@ local function ask(desk: any, topic: string, body: any): any
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop window args", function()
+    test.describe("chicago.tui_desktop window args", function()
         test.it("desktop.open and desktop.list report the args a window was opened with, for both kinds of window", function()
-            local desk = boot("windows.tui_desktop.test.args")
+            local desk = boot("chicago.tui_desktop.test.args")
 
             local with: any = ask(desk, "desktop.open",
                 {entry = "app:idle_window", args = "drive/app:fs/ui", w = 30, h = 8, x = 2, y = 2})

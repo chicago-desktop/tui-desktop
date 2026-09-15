@@ -15,25 +15,25 @@ local pixels = require("pixels")
 local apps = require("apps")
 local window_api = require("window_api")
 
-local NS = "windows.tui_desktop"
-local TERMINAL_ID = "windows.tui_desktop:terminal"
-local WORKERS_ID = "windows.tui_desktop:workers"
-local EXEC_ID = "windows.tui_desktop:exec"
-local DESKTOP_ID = "windows.tui_desktop.desktop:desktop"
-local LIBRARY_ID = "windows.tui_desktop.desktop:library"
-local CHROME_ID = "windows.tui_desktop.desktop:chrome"
-local WINDOW_ID = "windows.tui_desktop.desktop:window_pty"
-local PROGRAMS_ID = "windows.tui_desktop.desktop:programs"
-local WINDOW_API_ID = "windows.tui_desktop.desktop:window_api"
-local CONTROL_ID = "windows.tui_desktop.api:control"
-local RUNTIME_POLICY_ID = "windows.tui_desktop.security:desktop_runtime"
-local CHANNEL_POLICY_ID = "windows.tui_desktop.security:desktop_command_channel"
-local ACCESS_POLICY_ID = "windows.tui_desktop.security:desktop_endpoint_access"
+local NS = "chicago.tui_desktop"
+local TERMINAL_ID = "chicago.tui_desktop:terminal"
+local WORKERS_ID = "chicago.tui_desktop:workers"
+local EXEC_ID = "chicago.tui_desktop:exec"
+local DESKTOP_ID = "chicago.tui_desktop.desktop:desktop"
+local LIBRARY_ID = "chicago.tui_desktop.desktop:library"
+local CHROME_ID = "chicago.tui_desktop.desktop:chrome"
+local WINDOW_ID = "chicago.tui_desktop.desktop:window_pty"
+local PROGRAMS_ID = "chicago.tui_desktop.desktop:programs"
+local WINDOW_API_ID = "chicago.tui_desktop.desktop:window_api"
+local CONTROL_ID = "chicago.tui_desktop.api:control"
+local RUNTIME_POLICY_ID = "chicago.tui_desktop.security:desktop_runtime"
+local CHANNEL_POLICY_ID = "chicago.tui_desktop.security:desktop_command_channel"
+local ACCESS_POLICY_ID = "chicago.tui_desktop.security:desktop_endpoint_access"
 
 local ENDPOINTS = {
-    {id = "windows.tui_desktop.api:list_windows", method = "GET", path = "/tui-desktop/windows"},
-    {id = "windows.tui_desktop.api:open_window", method = "POST", path = "/tui-desktop/windows"},
-    {id = "windows.tui_desktop.api:window_action", method = "POST", path = "/tui-desktop/windows/{id}/{action}"},
+    {id = "chicago.tui_desktop.api:list_windows", method = "GET", path = "/tui-desktop/windows"},
+    {id = "chicago.tui_desktop.api:open_window", method = "POST", path = "/tui-desktop/windows"},
+    {id = "chicago.tui_desktop.api:window_action", method = "POST", path = "/tui-desktop/windows/{id}/{action}"},
 }
 
 local function get(id)
@@ -114,7 +114,7 @@ end
 -- a loop that waits for the answer in the inbox reads it first and throws it away.
 local function play_composer(mode)
     local inbox = process.inbox()
-    local service = "windows.tui_desktop.test.composer"
+    local service = "chicago.tui_desktop.test.composer"
     process.registry.register(service)
 
     local context: {string: any} = {}
@@ -388,7 +388,7 @@ end
 local function granted_actions(policy_ids: any)
     local granted = {}
     for _, id in ipairs(policy_ids) do
-        local policy = registry.get(qualify(id, "windows.tui_desktop.security"))
+        local policy = registry.get(qualify(id, "chicago.tui_desktop.security"))
         if policy then
             for _, action in ipairs(actions_of(policy)) do granted[action] = true end
         end
@@ -397,7 +397,7 @@ local function granted_actions(policy_ids: any)
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop hosts", function()
+    test.describe("chicago.tui_desktop hosts", function()
         test.it("mutes the log on the terminal host", function()
             -- Without this a runtime log line shifts the frame for good: the
             -- surface differ considers itself the only writer.
@@ -417,7 +417,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop processes", function()
+    test.describe("chicago.tui_desktop processes", function()
         test.it("exposes the compositor as a command with its own actor", function()
             local entry = get(DESKTOP_ID)
             local command = meta_of(entry).command or {}
@@ -426,7 +426,7 @@ local function define_tests()
 
             local data = data_of(entry)
             test.eq(data.method, "main")
-            test.eq(qualify((data.imports or {}).chrome, "windows.tui_desktop.desktop"), CHROME_ID)
+            test.eq(qualify((data.imports or {}).chrome, "chicago.tui_desktop.desktop"), CHROME_ID)
             test.is_true(has(data.modules or {}, "tty"), "the compositor needs the tty module")
             test.is_true(has(data.modules or {}, "process"), "the compositor needs the process module")
         end)
@@ -449,13 +449,13 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop command channel", function()
+    test.describe("chicago.tui_desktop command channel", function()
         test.it("wires each endpoint to its handler on the application router", function()
             for _, expected in ipairs(ENDPOINTS) do
                 get(expected.id)
                 local endpoint = get(expected.id .. ".endpoint")
                 local data = data_of(endpoint)
-                test.eq(qualify(data.func, "windows.tui_desktop.api"), expected.id)
+                test.eq(qualify(data.func, "chicago.tui_desktop.api"), expected.id)
                 test.eq(data.method, expected.method)
                 test.eq(data.path, expected.path)
                 test.eq(meta_of(endpoint).router, "app:api")
@@ -496,10 +496,10 @@ local function define_tests()
             test.is_true(has(data.modules or {}, "sql"),
                 "the compositor needs sql to read the storage")
             local imports = data.imports or {}
-            test.eq(qualify(imports.repo, "windows.tui_desktop.persist"),
-                "windows.tui_desktop.persist:repo")
-            test.eq(qualify(imports.apps, "windows.tui_desktop.persist"),
-                "windows.tui_desktop.persist:apps")
+            test.eq(qualify(imports.repo, "chicago.tui_desktop.persist"),
+                "chicago.tui_desktop.persist:repo")
+            test.eq(qualify(imports.apps, "chicago.tui_desktop.persist"),
+                "chicago.tui_desktop.persist:apps")
         end)
 
         test.it("keeps the look separate from the window mechanics", function()
@@ -514,11 +514,11 @@ local function define_tests()
 
             local shell = data_of(get(DESKTOP_ID))
             local imports = shell.imports or {}
-            test.eq(qualify(imports.library, "windows.tui_desktop.desktop"),
-                "windows.tui_desktop.desktop:library",
+            test.eq(qualify(imports.library, "chicago.tui_desktop.desktop"),
+                "chicago.tui_desktop.desktop:library",
                 "the shell calls the mechanics")
-            test.eq(qualify(imports.chrome, "windows.tui_desktop.desktop"),
-                "windows.tui_desktop.desktop:chrome",
+            test.eq(qualify(imports.chrome, "chicago.tui_desktop.desktop"),
+                "chicago.tui_desktop.desktop:chrome",
                 "the shell picks the theme")
         end)
 
@@ -527,7 +527,7 @@ local function define_tests()
             -- it has no process or program launching of its own. The window's code
             -- arrives over HTTP, and this boundary separates "ask the desktop" from
             -- "do anything at all".
-            local actions = actions_of(get("windows.tui_desktop.security:app_window_scope"))
+            local actions = actions_of(get("chicago.tui_desktop.security:app_window_scope"))
             test.is_true(has(actions, "process.send"), "a window must be able to send a command")
             test.is_true(has(actions, "process.registry"), "and to find the addressee")
             test.is_false(has(actions, "process.spawn"), "a window cannot spawn processes")
@@ -541,18 +541,18 @@ local function define_tests()
             local resources = policy.policy and policy.policy.resources
             test.not_nil(resources, "policy must list resources")
             if type(resources) == "string" then resources = {resources} end
-            test.is_true(has(resources, "windows.tui_desktop.api:*"),
-                "policy must cover windows.tui_desktop.api:*")
+            test.is_true(has(resources, "chicago.tui_desktop.api:*"),
+                "policy must cover chicago.tui_desktop.api:*")
         end)
     end)
 
-    test.describe("windows.tui_desktop compositor name", function()
+    test.describe("chicago.tui_desktop compositor name", function()
         test.it("a window learns its compositor's name at launch", function()
             -- A constant here was a defect: under a second shell the compositor
             -- is registered under its own name, and the window addressed someone
             -- else's (nonexistent) process. Silently — `api.open` does not wait for an answer.
-            local body = ask_probe("app:window_probe", "windows.shell:shell")
-            test.eq(body.name, "windows.shell:shell")
+            local body = ask_probe("app:window_probe", "chicago.shell:shell")
+            test.eq(body.name, "chicago.shell:shell")
             test.eq(body.source, "context")
         end)
 
@@ -562,8 +562,8 @@ local function define_tests()
             -- windows from the workshop (it has a narrow whitelist) get the name without
             -- a single edit. Measured, not inferred: the opposite would mean
             -- that the fix fixes only new windows.
-            local body = ask_probe("app:window_probe_bare", "windows.shell:shell")
-            test.eq(body.name, "windows.shell:shell")
+            local body = ask_probe("app:window_probe_bare", "chicago.shell:shell")
+            test.eq(body.name, "chicago.shell:shell")
             test.eq(body.source, "context")
         end)
 
@@ -582,7 +582,7 @@ local function define_tests()
             -- here would come back. So the compositor imports the window protocol
             -- rather than repeating the string.
             local imports = data_of(get(LIBRARY_ID)).imports or {}
-            test.eq(qualify(imports.window_api, "windows.tui_desktop.desktop"), WINDOW_API_ID,
+            test.eq(qualify(imports.window_api, "chicago.tui_desktop.desktop"), WINDOW_API_ID,
                 "the mechanics must take the context key from the window protocol")
 
             local api = data_of(get(WINDOW_API_ID))
@@ -591,7 +591,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop waiting for an answer in a window", function()
+    test.describe("chicago.tui_desktop waiting for an answer in a window", function()
         test.it("a window waits for the answer without losing the compositor's command", function()
             -- The command was sent while the window was waiting. The runtime does not
             -- lose it: it waits in the process queue until the window returns to its loop.
@@ -615,10 +615,10 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop a dialog belongs to a window", function()
+    test.describe("chicago.tui_desktop a dialog belongs to a window", function()
         test.it("a dialog remembers its window and leaves with it, while the neighbouring program stays", function()
-            local service = "windows.tui_desktop.test.desktop"
-            local watcher = "windows.tui_desktop.test.watcher"
+            local service = "chicago.tui_desktop.test.desktop"
+            local watcher = "chicago.tui_desktop.test.watcher"
             local inbox = process.inbox()
             local box = mailbox(inbox)
             process.registry.register(watcher)
@@ -682,12 +682,12 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop notification area", function()
+    test.describe("chicago.tui_desktop notification area", function()
         -- The tray is checked through the command channel, the way providers call it:
         -- an application service sends `desktop.tray`, and `desktop.list` is the place
         -- where "item not accepted" differs from "accepted but not drawn".
         test.it("puts, updates, removes and itself clears expired items, naming every refusal", function()
-            local service = "windows.tui_desktop.test.tray"
+            local service = "chicago.tui_desktop.test.tray"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -756,12 +756,12 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop window order and focus", function()
+    test.describe("chicago.tui_desktop window order and focus", function()
         -- The compositor here is real, the screen is the test's viewport, and clicks
         -- go into it as real mouse events. This whole class of checks used to be
         -- considered reachable only by eye through the probe.
         test.it("a click raises a window, closing the top one gives focus to the neighbour", function()
-            local service = "windows.tui_desktop.test.zorder"
+            local service = "chicago.tui_desktop.test.zorder"
             local inbox = process.inbox()
             local box = mailbox(inbox)
             local desk = boot_composer(service)
@@ -844,8 +844,8 @@ local function define_tests()
             -- A window sends commands without a return address so as not to freeze the
             -- frame. Previously a window never learned of a refusal of such a command:
             -- the status line is for the person, the log is for later, and nothing for the sender.
-            local service = "windows.tui_desktop.test.refusal"
-            local watcher = "windows.tui_desktop.test.refusal.watcher"
+            local service = "chicago.tui_desktop.test.refusal"
+            local watcher = "chicago.tui_desktop.test.refusal.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_composer(service)
@@ -881,7 +881,7 @@ local function define_tests()
             -- The command channel has a return address, and the refusal comes to it
             -- as an answer. The check pairs with the status line: there the refusal
             -- is visible to the person, here to the asker.
-            local service = "windows.tui_desktop.test.missing"
+            local service = "chicago.tui_desktop.test.missing"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -907,16 +907,16 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop pixel chrome", function()
+    test.describe("chicago.tui_desktop pixel chrome", function()
         test.it("without a cell size the mode does not turn on and names the reason", function()
             -- The guess "8×16" is right often enough to look correct, and wrong
             -- often enough to be taken for a drawing error.
-            local watcher = "windows.tui_desktop.test.pixels.watcher"
+            local watcher = "chicago.tui_desktop.test.pixels.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
 
             local silent = spawn_pixel_composer(
-                "windows.tui_desktop.test.pixels.silent", watcher, "silent")
+                "chicago.tui_desktop.test.pixels.silent", watcher, "silent")
             local told = box.take("composer.refused")
             test.is_true(tostring(told.error):find("does not start", 1, true) ~= nil,
                 "the refusal must call itself a refusal: " .. tostring(told.error))
@@ -926,7 +926,7 @@ local function define_tests()
 
             -- And a shell that gave no means to ask at all.
             local mute = spawn_pixel_composer(
-                "windows.tui_desktop.test.pixels.mute", watcher, "nothing")
+                "chicago.tui_desktop.test.pixels.mute", watcher, "nothing")
             local second = box.take("composer.refused")
             test.is_true(tostring(second.error):find("cell_size", 1, true) ~= nil,
                 "the refusal must name what was missing: " .. tostring(second.error))
@@ -934,7 +934,7 @@ local function define_tests()
 
             -- And a theme that cannot draw with rasters.
             local plain = spawn_pixel_composer(
-                "windows.tui_desktop.test.pixels.cells", watcher, "cells_theme")
+                "chicago.tui_desktop.test.pixels.cells", watcher, "cells_theme")
             local third = box.take("composer.refused")
             test.is_true(tostring(third.error):find("chrome.paint", 1, true) ~= nil,
                 "the refusal must name what the theme lacks: " .. tostring(third.error))
@@ -949,8 +949,8 @@ local function define_tests()
             -- handler gives a click into the void — from outside indistinguishable
             -- from "the mouse does not work", and people will look anywhere except
             -- the shape of the theme's answer.
-            local service = "windows.tui_desktop.test.pixels.hits"
-            local watcher = "windows.tui_desktop.test.pixels.hits.watcher"
+            local service = "chicago.tui_desktop.test.pixels.hits"
+            local watcher = "chicago.tui_desktop.test.pixels.hits.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1049,8 +1049,8 @@ local function define_tests()
             -- There are no more digit shortcuts in the menu: a keyboard path not
             -- visible in the interface must not be added. So the arrows must
             -- work — and work by the LAYOUT, not by the catalog.
-            local service = "windows.tui_desktop.test.pixels.keys"
-            local watcher = "windows.tui_desktop.test.pixels.keys.watcher"
+            local service = "chicago.tui_desktop.test.pixels.keys"
+            local watcher = "chicago.tui_desktop.test.pixels.keys.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1157,8 +1157,8 @@ local function define_tests()
             -- under the pointer is highlighted, while a folder under it expands by itself.
             -- Checked by the `menu_cursor` FIELD: "hover did not highlight" and
             -- "highlighted but the theme did not draw it" look the same on screen.
-            local service = "windows.tui_desktop.test.pixels.hover"
-            local watcher = "windows.tui_desktop.test.pixels.hover.watcher"
+            local service = "chicago.tui_desktop.test.pixels.hover"
+            local watcher = "chicago.tui_desktop.test.pixels.hover.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1220,8 +1220,8 @@ local function define_tests()
         end)
 
         test.it("a right click on an icon opens a context menu at the pointer, esc closes it", function()
-            local service = "windows.tui_desktop.test.pixels.context"
-            local watcher = "windows.tui_desktop.test.pixels.context.watcher"
+            local service = "chicago.tui_desktop.test.pixels.context"
+            local watcher = "chicago.tui_desktop.test.pixels.context.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1293,8 +1293,8 @@ local function define_tests()
             -- The icons lie in a two-by-two grid; each has TWO hit rows, like a
             -- real theme with a caption. The down arrow must go to the
             -- neighbouring icon, not to the caption of the same one.
-            local service = "windows.tui_desktop.test.pixels.icons"
-            local watcher = "windows.tui_desktop.test.pixels.icons.watcher"
+            local service = "chicago.tui_desktop.test.pixels.icons"
+            local watcher = "chicago.tui_desktop.test.pixels.icons.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1357,8 +1357,8 @@ local function define_tests()
             -- host's log is muted, so a complaint told only to it is told
             -- to nobody. So it must be in the status line — the only place
             -- a person sees.
-            local service = "windows.tui_desktop.test.pixels.flat"
-            local watcher = "windows.tui_desktop.test.pixels.flat.watcher"
+            local service = "chicago.tui_desktop.test.pixels.flat"
+            local watcher = "chicago.tui_desktop.test.pixels.flat.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "flat")
@@ -1393,8 +1393,8 @@ local function define_tests()
         end)
 
         test.it("chrome as images, content as characters, spaces under images", function()
-            local service = "windows.tui_desktop.test.pixels.live"
-            local watcher = "windows.tui_desktop.test.pixels.live.watcher"
+            local service = "chicago.tui_desktop.test.pixels.live"
+            local watcher = "chicago.tui_desktop.test.pixels.live.watcher"
             local box = mailbox(process.inbox())
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "ok")
@@ -1476,12 +1476,12 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop frame cost in time", function()
+    test.describe("chicago.tui_desktop frame cost in time", function()
         -- "It is slow" is not fixed without numbers: measure first. Bytes and rows
         -- say how much went to the terminal, but not where the time went, and the
         -- argument "rebuilding in Lua or present" would be settled by eye.
         test.it("the status carries the frame time, its trigger and a summary over recent frames", function()
-            local service = "windows.tui_desktop.test.frame_time"
+            local service = "chicago.tui_desktop.test.frame_time"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -1543,7 +1543,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop permissions for declared modules", function()
+    test.describe("chicago.tui_desktop permissions for declared modules", function()
         test.it("a permission is granted for every module gated by permissions", function()
             -- This class cost three hours here and looked like four different
             -- problems in a row: the compositor declared `env`, had no permission for
@@ -1555,7 +1555,7 @@ local function define_tests()
             for _, found in ipairs(entries :: {any}) do
                 local entry: any = found
                 local id = tostring(entry.id)
-                if id:find("windows.tui_desktop", 1, true) == 1 then
+                if id:find("chicago.tui_desktop", 1, true) == 1 then
                     local policy_ids = policies_of(entry)
                     local modules = data_of(entry).modules
                     if policy_ids and type(modules) == "table" then
@@ -1582,7 +1582,7 @@ local function define_tests()
             -- A built window has one policy and it is known in advance, so the
             -- rule is checked right on the whitelist: a module the window may
             -- ask for must be opened by this policy.
-            local granted = granted_actions({"windows.tui_desktop.security:app_window_scope"})
+            local granted = granted_actions({"chicago.tui_desktop.security:app_window_scope"})
             for _, gate in ipairs(GATED_MODULES) do
                 if apps.ALLOWED_MODULES[gate.module] then
                     local ok = false
@@ -1601,7 +1601,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop assembling a pixel frame", function()
+    test.describe("chicago.tui_desktop assembling a pixel frame", function()
         -- Arithmetic without a terminal and without graphics: what the theme returned
         -- arrives here, and here it is decided whether it gets into the frame.
         -- A witness canvas: records calls instead of drawing. As one table
@@ -1734,13 +1734,13 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop arrows in character mode", function()
+    test.describe("chicago.tui_desktop arrows in character mode", function()
         test.it("the menu cursor reaches the theme in cells too, not only in pixels", function()
             -- The mode that was not checked is the one where the arrows move something
             -- INVISIBLE: a person presses, something changes, and they do not see where.
             -- So the same path is checked with the default theme, where the cursor
             -- arrives as the seventh argument of chrome.menu.
-            local service = "windows.tui_desktop.test.keys.cells"
+            local service = "chicago.tui_desktop.test.keys.cells"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -1784,11 +1784,11 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop pixel theme zoom", function()
+    test.describe("chicago.tui_desktop pixel theme zoom", function()
         test.it("a cell size change updates the frame and the client even with the same grid", function()
-            local service = "windows.tui_desktop.test.pixels.zoom"
+            local service = "chicago.tui_desktop.test.pixels.zoom"
             local watcher = service .. ".watcher"
-            local provider = "windows.tui_desktop.test.provider"
+            local provider = "chicago.tui_desktop.test.provider"
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "zoom")
             tell_desktop(service, "desktop.open",
@@ -1830,10 +1830,10 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop pixel theme insets", function()
+    test.describe("chicago.tui_desktop pixel theme insets", function()
         test.it("the background is drawn before the content, and the mouse is counted from the viewport", function()
-            local service = "windows.tui_desktop.test.pixels.insets"
-            local provider = "windows.tui_desktop.test.provider"
+            local service = "chicago.tui_desktop.test.pixels.insets"
+            local provider = "chicago.tui_desktop.test.provider"
             local watcher = service .. ".watcher"
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "insets")
@@ -1888,10 +1888,10 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop view window without a process", function()
+    test.describe("chicago.tui_desktop view window without a process", function()
         test.it("a view waits for its provider instead of silently showing emptiness", function()
-            local service = "windows.tui_desktop.test.view"
-            local provider = "windows.tui_desktop.test.provider"
+            local service = "chicago.tui_desktop.test.view"
+            local provider = "chicago.tui_desktop.test.provider"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -1996,8 +1996,8 @@ local function define_tests()
         test.it("a provider's death returns the view to waiting instead of leaving yesterday's state", function()
             -- A view frozen at its last state looks alive and lies the more
             -- convincingly the longer it hangs.
-            local service = "windows.tui_desktop.test.view.orphan"
-            local provider = "windows.tui_desktop.test.provider"
+            local service = "chicago.tui_desktop.test.view.orphan"
+            local provider = "chicago.tui_desktop.test.provider"
             local desk = boot_composer(service)
 
             tell_desktop(service, "desktop.open", {entry = "app:view_window"})
@@ -2041,7 +2041,7 @@ local function define_tests()
             -- A window with a process changes size together with its viewport, a view
             -- has no viewport at all — and a path that does not know this crashes the
             -- compositor on the very first resize command.
-            local service = "windows.tui_desktop.test.view.resize"
+            local service = "chicago.tui_desktop.test.view.resize"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -2065,7 +2065,7 @@ local function define_tests()
         test.it("a view with nothing to draw it with does not open and says why", function()
             -- A dead render reference stays silent until the first open, and then
             -- looks like an empty window — that is, the theme will be blamed.
-            local service = "windows.tui_desktop.test.view.broken"
+            local service = "chicago.tui_desktop.test.view.broken"
             local box = mailbox(process.inbox())
             local desk = boot_composer(service)
 
@@ -2097,7 +2097,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop window type and menu", function()
+    test.describe("chicago.tui_desktop window type and menu", function()
         test.it("hides an entry with in_menu: false from the menu, without ceasing to open it", function()
             -- The flag is about the menu, not about launching: a file viewer or a
             -- properties dialog opens from another window and from the desktop.
@@ -2150,8 +2150,8 @@ local function define_tests()
     end)
     test.describe("taskbar launch and shell exit", function()
         test.it("raises one clock window and closes its provider through the Start menu", function()
-            local service = "windows.tui_desktop.test.actions"
-            local provider = "windows.tui_desktop.test.provider"
+            local service = "chicago.tui_desktop.test.actions"
+            local provider = "chicago.tui_desktop.test.provider"
             local watcher = service .. ".watcher"
             process.registry.register(watcher)
             local desk = boot_pixel_composer(service, watcher, "actions")
@@ -2187,7 +2187,7 @@ local function define_tests()
 
         test.it("exits by Enter on the menu action and by Ctrl+Q with the menu open", function()
             for _, method in ipairs({"enter", "ctrlq"}) do
-                local service = "windows.tui_desktop.test.quit." .. method
+                local service = "chicago.tui_desktop.test.quit." .. method
                 local watcher = service .. ".watcher"
                 process.registry.register(watcher)
                 local desk = boot_pixel_composer(service, watcher, "actions")

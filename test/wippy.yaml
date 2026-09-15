@@ -1,3 +1,3 @@
-organization: windows
+organization: chicago
 module: tui-desktop-harness
-description: Standalone runnable harness that boots windows/tui-desktop and runs its co-located *_test.lua suites.
+description: Standalone runnable harness that boots chicago/tui-desktop and runs its co-located *_test.lua suites.

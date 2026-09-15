@@ -14,7 +14,7 @@ local process = require("process")
 local time = require("time")
 local tty = require("tty")
 
-local WATCHER = "windows.tui_desktop.test.requires.watcher"
+local WATCHER = "chicago.tui_desktop.test.requires.watcher"
 
 local function body_of(message: any): any
     local body: any = message:payload()
@@ -68,11 +68,11 @@ local function ask(desk: any, topic: string, body: any): any
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop meta.requires", function()
+    test.describe("chicago.tui_desktop meta.requires", function()
         test.it("a shell is refused to a person without the right, and opens past the check for one with it", function()
             process.registry.register(WATCHER)
 
-            local user = boot("windows.tui_desktop.test.requires.user", "user")
+            local user = boot("chicago.tui_desktop.test.requires.user", "user")
             local refused = ask(user, "desktop.open", {command = "/bin/true"})
             test.is_true(refused.ok == false, "a shell opened for a person without tui_desktop.pty")
             local reason = tostring(refused.error)
@@ -84,7 +84,7 @@ local function define_tests()
 
             -- Past the check: whatever the spawn itself says afterwards, it is
             -- not this refusal.
-            local admin = boot("windows.tui_desktop.test.requires.admin", "admin")
+            local admin = boot("chicago.tui_desktop.test.requires.admin", "admin")
             local opened = ask(admin, "desktop.open", {command = "/bin/true"})
             test.is_true(string.find(tostring(opened.error), "may not open", 1, true) == nil,
                 "a person whose scope allows tui_desktop.pty was refused: " .. tostring(opened.error))

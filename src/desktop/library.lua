@@ -63,13 +63,13 @@ local function claim_desktop_name(family: string, slots: any): (any, any)
         .. " tried): " .. tostring(first_error)
 end
 
-local WINDOW_HOST = "windows.tui_desktop:workers"
+local WINDOW_HOST = "chicago.tui_desktop:workers"
 
 -- A window is any process entry that can write to its tty port. The module
 -- knows exactly one of its own (a program under a PTY); everything else is
 -- brought by the application and named by an entry — otherwise every new
 -- window would need a change to this module.
-local PTY_WINDOW = "windows.tui_desktop.desktop:window_pty"
+local PTY_WINDOW = "chicago.tui_desktop.desktop:window_pty"
 
 -- The application's window catalog: the compositor finds entries marked with
 -- this meta.type itself and shows them in the menu on alt+o.
@@ -135,7 +135,7 @@ local TRAY_MAX = 6
 local TRAY_TEXT = 16
 local TRAY_KEY = 64
 
--- Desktop widgets (FR-006 in windows/shell): registry entries whose
+-- Desktop widgets (FR-006 in chicago/shell): registry entries whose
 -- process the compositor spawns like the state provider of a view window,
 -- and whose published tree the theme draws in a panel under every window.
 -- The base spawns, stops and hands the list to the theme; it draws nothing.
@@ -260,7 +260,7 @@ local function run(options: any)
     -- connection its own desktop.
     local SERVICE_FAMILY = type(options.service_name) == "string"
         and options.service_name ~= "" and options.service_name
-        or "windows.tui_desktop.desktop"
+        or "chicago.tui_desktop.desktop"
     local claimed, claim_error = claim_desktop_name(SERVICE_FAMILY, options.service_slots)
     if not claimed then return nil, claim_error end
     local SERVICE_NAME: string = tostring(claimed)

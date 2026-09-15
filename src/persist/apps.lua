@@ -10,9 +10,9 @@ local registry = require("registry")
 
 local apps = {}
 
-apps.NAMESPACE = "windows.tui_desktop.apps"
+apps.NAMESPACE = "chicago.tui_desktop.apps"
 apps.WINDOW_TYPE = "tui_desktop.window"
-apps.POLICY = "windows.tui_desktop.security:app_window_scope"
+apps.POLICY = "chicago.tui_desktop.security:app_window_scope"
 
 -- What a window may require. The list is narrow on purpose: a window draws
 -- itself and reads data, but does not spawn processes and does not go outside.
@@ -40,7 +40,7 @@ apps.DEFAULT_MODULES = {"channel", "time", "tty"}
 
 -- The desktop library is attached to every window under this name; it cannot
 -- be taken by a window's own import.
-apps.DESKTOP_IMPORT = "windows.tui_desktop.desktop:window_api"
+apps.DESKTOP_IMPORT = "chicago.tui_desktop.desktop:window_api"
 apps.WINDOW_TYPES = {app = true, dialog = true, tool = true}
 
 -- The window's description beyond the code — what an entry from a file keeps
@@ -201,7 +201,7 @@ function apps.build_entry(window)
         title = window.title,
         width = window.width,
         height = window.height,
-        comment = "Built in the runtime; the source is stored in windows_tui_desktop_windows.",
+        comment = "Built in the runtime; the source is stored in chicago_tui_desktop_windows.",
     }
     -- The menu folder — as in an entry from a file, with the same field. An
     -- empty one is not written at all: "not named" and "named empty" are

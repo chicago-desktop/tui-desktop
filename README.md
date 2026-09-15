@@ -1,8 +1,8 @@
-# windows/tui-desktop
+# chicago/tui-desktop
 
-Shared window contract: [Windows shell SDK](https://github.com/wippy-windows/windows/blob/main/docs/sdk.md).
+Shared window contract: [Windows shell SDK](https://github.com/chicago-desktop/shell/blob/main/docs/sdk.md).
 The base holds `window_api`, `geometry`, `input` and `scroll`; the ready-made
-declarative components and the skill are in the `windows/shell` module.
+declarative components and the skill are in the `chicago/shell` module.
 
 
 A window manager for the terminal on the Wippy runtime.
@@ -27,7 +27,7 @@ Four parts, and the boundary between them is the reason the module is built
 this way and not simpler.
 
 - Part: **Mechanics**; What it is: `…desktop:library` — one function `run(options)`: windows in z-order, input, hit test, command channel, process hosting; Who writes it: this module
-- Part: **Shell**; What it is: a process that calls `run` with its own theme, catalog and desktop layout; Who writes it: the application; here there are two — the stock one and Windows 95 in `windows/shell`
+- Part: **Shell**; What it is: a process that calls `run` with its own theme, catalog and desktop layout; Who writes it: the application; here there are two — the stock one and Windows 95 in `chicago/shell`
 - Part: **Theme**; What it is: pure drawing functions: frames, bars, menus, icons. Returns the hit map; Who writes it: the shell
 - Part: **Window**; What it is: a registry entry. Usually a process that writes to its viewport and does not know it is a window; it can also be a view without a process; Who writes it: the application
 
@@ -64,7 +64,7 @@ Where to start reading, depending on why you came:
 ## Running
 
 ```bash
-wippy run --host windows.tui_desktop:terminal desktop
+wippy run --host chicago.tui_desktop:terminal desktop
 ```
 
 `--host` is required here, and this is not pedantry: the CLI's terminal host
@@ -87,8 +87,8 @@ the terminal window executor specifically, in `.wippy.yaml`:
 
 ```yaml
 override:
-  "windows.tui_desktop:exec:default_env.HOME": "${env:HOME}"
-  "windows.tui_desktop:exec:default_env.PATH": "${env:PATH}"
+  "chicago.tui_desktop:exec:default_env.HOME": "${env:HOME}"
+  "chicago.tui_desktop:exec:default_env.PATH": "${env:PATH}"
 ```
 
 These are values from the environment of the process that starts Wippy; user
@@ -153,7 +153,7 @@ All endpoints live behind the application's authenticated router.
 
 The workshop — windows built on the fly:
 
-- `POST /tui-desktop/apps` — build a window: `name`, `source`, `title`, `width`, `height`, `modules`, `group` (the menu folder, like `meta.group` of an entry from a file; empty — the shell chooses the folder). Beyond the code — the same fields as an entry from a file: `imports` (`{name = library id}`, the name `desktop` is taken), `pixel_render` (the library of the pixel view; `pixel_state` — the window itself), `image`, `icon`, `window_type` (`app | dialog | tool`), `resizable`, `in_menu`, `order`. This is how the workshop builds a window on the shell SDK: `imports = {app = "windows.shell.sdk:app"}`, `pixel_render = "windows.shell.sdk:render"`. A dead import and a non-library are rejected with the field's name
+- `POST /tui-desktop/apps` — build a window: `name`, `source`, `title`, `width`, `height`, `modules`, `group` (the menu folder, like `meta.group` of an entry from a file; empty — the shell chooses the folder). Beyond the code — the same fields as an entry from a file: `imports` (`{name = library id}`, the name `desktop` is taken), `pixel_render` (the library of the pixel view; `pixel_state` — the window itself), `image`, `icon`, `window_type` (`app | dialog | tool`), `resizable`, `in_menu`, `order`. This is how the workshop builds a window on the shell SDK: `imports = {app = "chicago.shell.sdk:app"}`, `pixel_render = "chicago.shell.sdk:render"`. A dead import and a non-library are rejected with the field's name
 - `GET /tui-desktop/apps` — the saved windows and the `live` flag (whether a registry entry exists right now)
 - command `desktop.tray` `{key, text, entry?, title?, ttl?}` of the command channel — a notification area item next to the clock; the same `key` updates it, `{key, remove: true}` removes it. At most 6 items and 16 characters in a label. An item not updated within `ttl` seconds is removed by the compositor itself. A click on an item opens `entry` or raises the window already open — like a click on the clock. From Lua — `window_api.tray(spec, service?)`; `desktop.list` returns `tray` with the owner and the remaining lifetime
 - command `desktop.refresh` of the command channel also brings the desktop widgets in line with `options.widgets`: new entries are spawned, vanished ones stopped, stopped ones spawned again; `desktop.list` returns `widgets` — `{id, entry, title, opens, w, h, revision, waiting, stopped}` each, without the tree. See "Desktop widgets"
@@ -263,7 +263,7 @@ curl -X POST -H 'Content-Type: application/json' \
   http://localhost:8099/api/v1/tui-desktop/apps
 ```
 
-The source then goes into the `windows_tui_desktop_windows` table, and at
+The source then goes into the `chicago_tui_desktop_windows` table, and at
 start the compositor returns the saved windows to the registry. Without this a
 built window would live exactly until the process ends.
 
@@ -333,7 +333,7 @@ silently, because `desktop.open` does not wait for an answer.
   workshop windows (the workshop has a narrow allowlist) get the name without
   a single edit. Verified by a test on a live run, not deduced.
 - **A window started without a name works as before** — it takes the stock
-  `windows.tui_desktop.desktop`.
+  `chicago.tui_desktop.desktop`.
 - **A refusal names the reason and goes to the log.** "Desktop so-and-so does
   not answer; the compositor's name did not arrive at start" — in the second
   return value and as a line in the log: `open` does not wait for an answer,
@@ -513,8 +513,8 @@ as before: a process inside, writing to its viewport.
 meta:
   type: tui_desktop.window
   window_content: pixels                        # cells (default) | pixels
-  render: windows.shell.explorer:render_pixels # pure rendering library
-  state:  windows.shell.explorer:state     # provider process, its own actor
+  render: chicago.shell.explorer:render_pixels # pure rendering library
+  state:  chicago.shell.explorer:state     # provider process, its own actor
 ```
 
 `pixels` means that **there is no process inside**: the theme draws by calling
@@ -574,7 +574,7 @@ picture the window has — a folder window that navigates in place changes both.
 
 ## The look is separate from the mechanics: the theme contract
 
-The compositor is the library `windows.tui_desktop.desktop:library` with one
+The compositor is the library `chicago.tui_desktop.desktop:library` with one
 function `run(options)`. Everything that is drawn comes as a theme in
 `options.chrome`; the chrome's geometry — how many rows are taken at the top
 and at the bottom — is declared by the theme too. The stock shell
@@ -738,7 +738,7 @@ Otherwise windows would slide off the edge silently.
 
 ## Desktop widgets
 
-A desktop widget (FR-006 in `windows/shell`) is a view window without the
+A desktop widget (FR-006 in `chicago/shell`) is a view window without the
 window: a registry entry whose process the compositor spawns like the state
 provider of a view window, and whose published state the theme draws in a
 panel on the desktop, under every window. The base discovers nothing and
@@ -747,10 +747,10 @@ draws nothing: the shell lists the entries, the theme draws them.
 ```lua
 local ok, err = library.run({
     chrome = theme,
-    -- The shell reads the registry (meta.type: windows.widget) and hands the list over.
+    -- The shell reads the registry (meta.type: chicago.widget) and hands the list over.
     widgets = function()
         return {{entry = "app.monitor:memory", title = "Memory", w = 20, h = 6,
-                 order = 20, opens = "windows.shell.taskman:window"}}, nil
+                 order = 20, opens = "chicago.shell.taskman:window"}}, nil
     end,
 })
 ```
@@ -1033,7 +1033,7 @@ The harness in `test/` replaces the module with the working copy from `..`, so
 it also starts the desktop without any application:
 
 ```bash
-cd test && wippy run --host windows.tui_desktop:terminal desktop
+cd test && wippy run --host chicago.tui_desktop:terminal desktop
 ```
 
 A full-screen program cannot be checked by an exit code: without a real
@@ -1045,7 +1045,7 @@ text grid — the screen snapshot is the proof.
 ```bash
 cd test && python3 ../tools/tui-probe.py --cols 100 --rows 26 --boot 60 \
     --send $'\033n' --send 'echo ok' --send-key enter --expect 'ok' \
-    -- wippy run --host windows.tui_desktop:terminal desktop
+    -- wippy run --host chicago.tui_desktop:terminal desktop
 ```
 
 ### A permission for every declared module — by a rule, not by eye

@@ -16,7 +16,7 @@ return {main = main}
 ]]
 
 local function define_tests()
-    test.describe("windows.tui_desktop storage", function()
+    test.describe("chicago.tui_desktop storage", function()
         test.it("survives the saved — read — deleted round trip", function()
             repo.delete(NAME)
 
@@ -74,7 +74,7 @@ local function define_tests()
         end)
     end)
 
-    test.describe("windows.tui_desktop app entries", function()
+    test.describe("chicago.tui_desktop app entries", function()
         test.it("keeps foreign modules out of a window", function()
             -- The refusal must name the module: "the window does not work"
             -- without a name sends people looking for the error in the window's code.
@@ -102,7 +102,7 @@ local function define_tests()
                 source = "return {main = function() end}", modules = {},
             })
             test.eq((entry.data.imports or {}).desktop,
-                "windows.tui_desktop.desktop:window_api",
+                "chicago.tui_desktop.desktop:window_api",
                 "the desktop library is attached to every window")
         end)
 
@@ -153,7 +153,7 @@ local function define_tests()
             test.eq(entry.meta.in_menu, false)
             test.eq(entry.meta.order, 5)
             test.eq(entry.meta.pixel_render, "some.module:render")
-            test.eq(entry.meta.pixel_state, "windows.tui_desktop.apps:probe", "the window publishes the view's state itself")
+            test.eq(entry.meta.pixel_state, "chicago.tui_desktop.apps:probe", "the window publishes the view's state itself")
             test.is_nil(entry.meta.stray)
             -- Without a description — the entry as before.
             local plain = apps.build_entry({
@@ -192,13 +192,13 @@ local function define_tests()
                 name = "probe", title = "Probe", width = 30, height = 8,
                 source = SOURCE, modules = {"tty"},
             })
-            test.eq(entry.id, "windows.tui_desktop.apps:probe")
+            test.eq(entry.id, "chicago.tui_desktop.apps:probe")
             test.eq(entry.kind, "process.lua")
             test.eq(entry.meta.type, "tui_desktop.window")
             test.eq(entry.meta.title, "Probe")
             test.eq(entry.data.method, "main")
             test.eq(entry.data.security.policies[1],
-                "windows.tui_desktop.security:app_window_scope")
+                "chicago.tui_desktop.security:app_window_scope")
         end)
     end)
 end

@@ -91,9 +91,9 @@ local function settled(desk: any, id: any, ready: any): any
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop size handle", function()
+    test.describe("chicago.tui_desktop size handle", function()
         test.it("the last two cells of the bottom frame row resize; the third does not, nor a fixed window", function()
-            local desk = boot("windows.tui_desktop.test.resize")
+            local desk = boot("chicago.tui_desktop.test.resize")
             local function mouse(action: string, x: integer, y: integer)
                 local sent = desk.view:send({type = "mouse", action = action, button = "left", x = x, y = y})
                 test.is_true(sent == true, "the mouse event did not reach the compositor")

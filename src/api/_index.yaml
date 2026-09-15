@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: windows.tui_desktop.api
+namespace: chicago.tui_desktop.api
 
 # The command channel: the same desktop a person sits at is driven by an
 # agent from outside. Both sides work at once — there is one compositor, and
@@ -9,7 +9,7 @@ namespace: windows.tui_desktop.api
 # runtime and saved so that it survives a restart.
 
 entries:
-  # windows.tui_desktop.api:control
+  # chicago.tui_desktop.api:control
   - name: control
     kind: library.lua
     meta:
@@ -20,9 +20,9 @@ entries:
       - process
       - time
     imports:
-      window_api: windows.tui_desktop.desktop:window_api
+      window_api: chicago.tui_desktop.desktop:window_api
 
-  # windows.tui_desktop.api:list_windows
+  # chicago.tui_desktop.api:list_windows
   - name: list_windows
     kind: function.lua
     meta:
@@ -33,9 +33,9 @@ entries:
       - http
       - security
     imports:
-      control: windows.tui_desktop.api:control
+      control: chicago.tui_desktop.api:control
     security:
-      policies: [windows.tui_desktop.security:desktop_command_channel]
+      policies: [chicago.tui_desktop.security:desktop_command_channel]
 
   - name: list_windows.endpoint
     kind: http.endpoint
@@ -46,7 +46,7 @@ entries:
     func: list_windows
     path: /tui-desktop/windows
 
-  # windows.tui_desktop.api:open_window
+  # chicago.tui_desktop.api:open_window
   - name: open_window
     kind: function.lua
     meta:
@@ -58,9 +58,9 @@ entries:
       - json
       - security
     imports:
-      control: windows.tui_desktop.api:control
+      control: chicago.tui_desktop.api:control
     security:
-      policies: [windows.tui_desktop.security:desktop_command_channel]
+      policies: [chicago.tui_desktop.security:desktop_command_channel]
 
   - name: open_window.endpoint
     kind: http.endpoint
@@ -71,7 +71,7 @@ entries:
     func: open_window
     path: /tui-desktop/windows
 
-  # windows.tui_desktop.api:window_action
+  # chicago.tui_desktop.api:window_action
   - name: window_action
     kind: function.lua
     meta:
@@ -83,9 +83,9 @@ entries:
       - json
       - security
     imports:
-      control: windows.tui_desktop.api:control
+      control: chicago.tui_desktop.api:control
     security:
-      policies: [windows.tui_desktop.security:desktop_command_channel]
+      policies: [chicago.tui_desktop.security:desktop_command_channel]
 
   - name: window_action.endpoint
     kind: http.endpoint
@@ -102,7 +102,7 @@ entries:
   # endpoints below accept the code of a future window, so they live behind
   # the authenticated router and behind their own policy.
 
-  # windows.tui_desktop.api:create_app
+  # chicago.tui_desktop.api:create_app
   - name: create_app
     kind: function.lua
     meta:
@@ -117,13 +117,13 @@ entries:
       - env
       - registry
     imports:
-      repo: windows.tui_desktop.persist:repo
-      apps: windows.tui_desktop.persist:apps
+      repo: chicago.tui_desktop.persist:repo
+      apps: chicago.tui_desktop.persist:apps
     security:
       policies:
-        - windows.tui_desktop.security:workshop_scope
+        - chicago.tui_desktop.security:workshop_scope
         # Same as the compositor's: the storage reads the database name from the environment.
-        - windows.tui_desktop.security:storage_env
+        - chicago.tui_desktop.security:storage_env
 
   - name: create_app.endpoint
     kind: http.endpoint
@@ -134,7 +134,7 @@ entries:
     func: create_app
     path: /tui-desktop/apps
 
-  # windows.tui_desktop.api:list_apps
+  # chicago.tui_desktop.api:list_apps
   - name: list_apps
     kind: function.lua
     meta:
@@ -149,13 +149,13 @@ entries:
       - json
       - registry
     imports:
-      repo: windows.tui_desktop.persist:repo
-      apps: windows.tui_desktop.persist:apps
+      repo: chicago.tui_desktop.persist:repo
+      apps: chicago.tui_desktop.persist:apps
     security:
       policies:
-        - windows.tui_desktop.security:workshop_scope
+        - chicago.tui_desktop.security:workshop_scope
         # Same as the compositor's: the storage reads the database name from the environment.
-        - windows.tui_desktop.security:storage_env
+        - chicago.tui_desktop.security:storage_env
 
   - name: list_apps.endpoint
     kind: http.endpoint
@@ -166,7 +166,7 @@ entries:
     func: list_apps
     path: /tui-desktop/apps
 
-  # windows.tui_desktop.api:delete_app
+  # chicago.tui_desktop.api:delete_app
   - name: delete_app
     kind: function.lua
     meta:
@@ -181,13 +181,13 @@ entries:
       - json
       - registry
     imports:
-      repo: windows.tui_desktop.persist:repo
-      apps: windows.tui_desktop.persist:apps
+      repo: chicago.tui_desktop.persist:repo
+      apps: chicago.tui_desktop.persist:apps
     security:
       policies:
-        - windows.tui_desktop.security:workshop_scope
+        - chicago.tui_desktop.security:workshop_scope
         # Same as the compositor's: the storage reads the database name from the environment.
-        - windows.tui_desktop.security:storage_env
+        - chicago.tui_desktop.security:storage_env
 
   - name: delete_app.endpoint
     kind: http.endpoint

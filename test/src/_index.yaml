@@ -1,14 +1,14 @@
 version: "1.0"
 namespace: app
 
-# Standalone harness for windows/tui-desktop. Provides the host resources the
+# Standalone harness for chicago/tui-desktop. Provides the host resources the
 # boot needs (app:db, app:processes, gateway + api router, env storage, a
 # permissive actor scope) and wires them through wippy/bootloader so the
 # co-located *_test.lua suites run in isolation. The router exists only so the
 # endpoint entries resolve; the command channel is covered as registry shape.
 #
 # The same harness brings the desktop up by hand, without the application:
-#   cd test && wippy run --host windows.tui_desktop:terminal desktop
+#   cd test && wippy run --host chicago.tui_desktop:terminal desktop
 # Harness-only; excluded from publish via the module wippy.yaml.
 
 entries:
@@ -22,13 +22,13 @@ entries:
       type: test
       comment: The window storage survives the "saved — read — deleted" round trip, and building a registry entry keeps foreign modules out.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://storage_test.lua
     modules: [sql, env, json, registry]
     imports:
       test: wippy.test:test
-      repo: windows.tui_desktop.persist:repo
-      apps: windows.tui_desktop.persist:apps
+      repo: chicago.tui_desktop.persist:repo
+      apps: chicago.tui_desktop.persist:apps
     method: run
 
   - name: wiring_test
@@ -37,15 +37,15 @@ entries:
       type: test
       comment: Hosts, processes, endpoints and policies exist and reference each other; the log on the terminal host is muted, and the command channel has no permission to spawn processes.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://wiring_test.lua
     modules: [registry, process, channel, time, tty]
     imports:
       test: wippy.test:test
-      programs: windows.tui_desktop.desktop:programs
-      pixels: windows.tui_desktop.desktop:pixels
-      apps: windows.tui_desktop.persist:apps
-      window_api: windows.tui_desktop.desktop:window_api
+      programs: chicago.tui_desktop.desktop:programs
+      pixels: chicago.tui_desktop.desktop:pixels
+      apps: chicago.tui_desktop.persist:apps
+      window_api: chicago.tui_desktop.desktop:window_api
     method: run
 
   # A stub window in two forms: with the ctx module and without it. Two entries
@@ -59,7 +59,7 @@ entries:
     method: main
     modules: [process, ctx]
     imports:
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
 
   # A window that asks the compositor. The mode arrives as an argument: "naive" —
   # a loop that eats other messages from the inbox, "ask" — the library's waiting primitive.
@@ -71,7 +71,7 @@ entries:
     method: main
     modules: [process, channel, time]
     imports:
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
 
   - name: window_probe_bare
     kind: process.lua
@@ -81,7 +81,7 @@ entries:
     method: main
     modules: [process]
     imports:
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
 
   # The whole compositor, on a viewport handed out by the test. The modules are
   # the stock shell's: the mechanics are called exactly as in real use.
@@ -93,8 +93,8 @@ entries:
     method: main
     modules: [channel, env, json, logger, process, registry, sql, time, tty]
     imports:
-      library: windows.tui_desktop.desktop:library
-      chrome: windows.tui_desktop.desktop:chrome
+      library: chicago.tui_desktop.desktop:library
+      chrome: chicago.tui_desktop.desktop:chrome
 
   - name: pixel_chrome
     kind: library.lua
@@ -120,10 +120,10 @@ entries:
     method: main
     modules: [channel, env, json, logger, process, registry, security, sql, time, tty]
     imports:
-      library: windows.tui_desktop.desktop:library
+      library: chicago.tui_desktop.desktop:library
       pixel_chrome: app:pixel_chrome
       flat_chrome: app:flat_chrome
-      cell_chrome: windows.tui_desktop.desktop:chrome
+      cell_chrome: chicago.tui_desktop.desktop:chrome
       widget_cells: app:widget_cells_chrome
 
   - name: widget_cells_chrome
@@ -132,7 +132,7 @@ entries:
       comment: The stock cell theme plus the widget marks and hit records of the pixel test theme — widgets must reach fill in cells mode too.
     source: file://test_chrome_cells.lua
     imports:
-      stock: windows.tui_desktop.desktop:chrome
+      stock: chicago.tui_desktop.desktop:chrome
       pixel_chrome: app:pixel_chrome
 
   # Desktop widgets (FR-006): the compositor spawns these the way it spawns the
@@ -274,7 +274,7 @@ entries:
     method: main
     modules: [channel, process, time]
     imports:
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
 
   - name: refusal_probe
     kind: process.lua
@@ -287,7 +287,7 @@ entries:
     method: main
     modules: [channel, process, time]
     imports:
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
 
   - name: idle_window
     kind: process.lua
@@ -342,7 +342,7 @@ entries:
       effect: allow
 
   # The harness source is the lock root. Its .wippy.yaml replaces the declared
-  # windows/tui-desktop dependency with ../ so the module's canonical source and
+  # chicago/tui-desktop dependency with ../ so the module's canonical source and
   # colocated tests load directly without a lock-file replacement.
 
   # The harness tests the module, so it depends on it. The replacement in .wippy.yaml
@@ -353,9 +353,9 @@ entries:
     kind: ns.dependency
     meta:
       comment: The module under test; its source is replaced with ../ in .wippy.yaml.
-    component: "windows/tui-desktop"
+    component: "chicago/tui-desktop"
     parameters:
-      - name: windows.tui_desktop:api_router
+      - name: chicago.tui_desktop:api_router
         value: app:api
 
   - name: tui_desktop_harness.dep.migration
@@ -406,7 +406,7 @@ entries:
       type: test
       comment: The compositor tells the window that lost the keyboard and the one that got it, on open and on minimize, in order and without repeats.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_focus_test.lua
     modules: [channel, process, time, tty, registry]
     imports:
@@ -419,7 +419,7 @@ entries:
       type: test
       comment: Desktop widgets on a live compositor — spawned from the shell's list in order, a bad size refused by entry, state only from their own process, stopped and respawned on refresh, drawn in both modes, clicked like a tray item.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://widgets_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -447,7 +447,7 @@ entries:
       type: test
       comment: The window description reports the args a window was opened with — a process window and a view window, in desktop.open and desktop.list — so an opener can focus the window already open for the same thing.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_args_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -473,7 +473,7 @@ entries:
       type: test
       comment: The size handle is the last two cells of the bottom frame row and keeps the pointer's offset; the third cell does nothing, and a window with resizable false ignores the handle.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_resize_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -486,7 +486,7 @@ entries:
       type: test
       comment: A move or resize drag shows an outline and the window takes its rect on the release; Esc drops the outline; a burst of motions is a few frames, named batch, not one per motion.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_outline_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -499,12 +499,12 @@ entries:
       type: test
       comment: pixels.frame blanks the cells under a picture but not under an overlay — a drag's outline is transparent but for its line, and the text under it stays.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://pixels_overlay_test.lua
     modules: [tty]
     imports:
       test: wippy.test:test
-      pixels: windows.tui_desktop.desktop:pixels
+      pixels: chicago.tui_desktop.desktop:pixels
     method: run
 
   - name: desktop_slots_test
@@ -513,12 +513,12 @@ entries:
       type: test
       comment: Several desktops of one name claim name, name.2, …; a freed name is taken again; window_api.desktops finds every one running.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://desktop_slots_test.lua
     modules: [channel, process, time, tty]
     imports:
       test: wippy.test:test
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
     method: run
 
   # What a logged-on person needs to open a shell (window_pty's meta.requires).
@@ -537,7 +537,7 @@ entries:
       type: test
       comment: A window whose entry names meta.requires opens only for a logged-on identity whose scope allows that action; a shell is refused to a person without it, with the reason.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://desktop_requires_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -550,7 +550,7 @@ entries:
       type: test
       comment: A cancel shuts the desktop down with its windows closed, not left orphaned.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://desktop_cancel_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -578,7 +578,7 @@ entries:
       type: test
       comment: Plain mouse motion reaches only the focused window's client, in client cells, once per cell — nothing over the frame, the desktop or another window; leaving the client forgets the cell.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_motion_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -596,7 +596,7 @@ entries:
     method: main
     modules: [channel, process, time]
     imports:
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
 
   - name: image_view
     kind: process.lua
@@ -619,7 +619,7 @@ entries:
       type: test
       comment: A view window's published state carries image beside title — the title-bar picture changes, desktop.list reports it, and an absent or empty image keeps the one the window has.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_image_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -645,7 +645,7 @@ entries:
       type: test
       comment: A close is a request a window may refuse — it stays with a notice after the grace; a window that closes itself goes; a PTY window closes as before; force and shutdown kill after the grace.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_close_test.lua
     modules: [channel, process, time, tty]
     imports:
@@ -665,7 +665,7 @@ entries:
     method: main
     modules: [channel, process, time, tty, ctx]
     imports:
-      desktop: windows.tui_desktop.desktop:window_api
+      desktop: chicago.tui_desktop.desktop:window_api
 
   - name: window_refuse_test
     kind: function.lua
@@ -673,7 +673,7 @@ entries:
       type: test
       comment: A close refused by the window's own process ends the request without a notice and the next close asks again; a refusal from any other process is refused and changes nothing.
       group: TUI Desktop
-      suite: windows_tui_desktop
+      suite: chicago_tui_desktop
     source: file://window_refuse_test.lua
     modules: [channel, process, time, tty]
     imports:

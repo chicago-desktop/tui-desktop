@@ -1,5 +1,5 @@
 -- A desktop widget's process for the tests (FR-006): what the compositor
--- spawns for a registry entry of `meta.type: windows.widget`.
+-- spawns for a registry entry of `meta.type: chicago.widget`.
 --
 -- It publishes a state at start and again on `probe.publish`. The state names
 -- the widget id, the size and cell it was spawned with, and a counter, so the

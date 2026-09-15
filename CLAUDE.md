@@ -24,7 +24,7 @@ text grid:
 cd test && python3 ../tools/tui-probe.py \
     --cols 100 --rows 26 --boot 60 --settle 3 \
     --send $'\033n' --send 'echo ok' --send-key enter --expect 'ok' \
-    -- wippy run --host windows.tui_desktop:terminal desktop
+    -- wippy run --host chicago.tui_desktop:terminal desktop
 ```
 
 Take `--boot` of at least 60 seconds: the whole runtime starts before the first

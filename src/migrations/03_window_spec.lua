@@ -11,26 +11,26 @@
 -- '{}' — "nothing declared": the window is built as before.
 
 return require("migration").define(function()
-    migration("Add spec to windows_tui_desktop_windows", function()
+    migration("Add spec to chicago_tui_desktop_windows", function()
         database("postgres", function()
             up(function(db)
                 local _, err = db:execute([[
-                    ALTER TABLE windows_tui_desktop_windows
+                    ALTER TABLE chicago_tui_desktop_windows
                         ADD COLUMN spec TEXT NOT NULL DEFAULT '{}'
                 ]])
                 if err then error("Failed to add spec: " .. err) end
             end)
-            down(function(db) db:execute("ALTER TABLE windows_tui_desktop_windows DROP COLUMN spec") end)
+            down(function(db) db:execute("ALTER TABLE chicago_tui_desktop_windows DROP COLUMN spec") end)
         end)
         database("sqlite", function()
             up(function(db)
                 local _, err = db:execute([[
-                    ALTER TABLE windows_tui_desktop_windows
+                    ALTER TABLE chicago_tui_desktop_windows
                         ADD COLUMN spec TEXT NOT NULL DEFAULT '{}'
                 ]])
                 if err then error("Failed to add spec: " .. err) end
             end)
-            down(function(db) db:execute("ALTER TABLE windows_tui_desktop_windows DROP COLUMN spec") end)
+            down(function(db) db:execute("ALTER TABLE chicago_tui_desktop_windows DROP COLUMN spec") end)
         end)
     end)
 end)

@@ -18,7 +18,7 @@ local process = require("process")
 local time = require("time")
 local tty = require("tty")
 
-local WATCHER = "windows.tui_desktop.test.cancel.watcher"
+local WATCHER = "chicago.tui_desktop.test.cancel.watcher"
 
 local function body_of(message: any): any
     local body: any = message:payload()
@@ -96,11 +96,11 @@ local function await_exits(events: any, pids: any): any
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop desktop shutdown without a terminal", function()
+    test.describe("chicago.tui_desktop desktop shutdown without a terminal", function()
         test.it("a cancel closes the desktop's windows, then the desktop", function()
             process.registry.register(WATCHER)
             local events = process.events()
-            local desk = boot("windows.tui_desktop.test.cancel")
+            local desk = boot("chicago.tui_desktop.test.cancel")
             local window = open_window(desk)
 
             process.cancel(tostring(desk.pid), "the terminal disconnected")

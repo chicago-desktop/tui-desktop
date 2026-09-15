@@ -1,9 +1,9 @@
-organization: windows
+organization: chicago
 module: tui-desktop
 description: A window manager for the terminal on the Wippy runtime — a compositor with overlapping windows, windows running real programs under a PTY, and a command channel through which an agent drives them.
 # Pick the license your distribution requires (kickside platform modules use BUSL-1.1).
 license: MIT
-repository: https://github.com/wippy-windows/tui-desktop
+repository: https://github.com/chicago-desktop/tui-desktop
 homepage: https://wippy.ai
 keywords:
   - kickside

@@ -7,20 +7,20 @@ version: "1.0"
 # `wippy test`.
 workspace:
   replacements:
-    windows/tui-desktop: ..
+    chicago/tui-desktop: ..
 override:
-  "windows.tui_desktop:exec:default_env.HOME": "${env:HOME}"
-  "windows.tui_desktop:exec:default_env.PATH": "${env:PATH}"
+  "chicago.tui_desktop:exec:default_env.HOME": "${env:HOME}"
+  "chicago.tui_desktop:exec:default_env.PATH": "${env:PATH}"
   # Menu navigation tests use their own fixture programs.
-  "windows.tui_desktop.desktop:window_pty:meta.in_menu": false
-  "windows.tui_desktop.security:user_security_scope:data.default": app:user
+  "chicago.tui_desktop.desktop:window_pty:meta.in_menu": false
+  "chicago.tui_desktop.security:user_security_scope:data.default": app:user
 vars:
   pg_host: localhost
   pg_port: 5433
   # <org>_test_<module> per docs/kickside-development/13-testing.md: harnesses
   # from different orgs share one Postgres server without colliding. Older
   # modules hardcode a kickside_test_ prefix; new modules use the org form.
-  pg_database: windows_test_tui_desktop
+  pg_database: chicago_test_tui_desktop
   pg_username: kickside
   pg_password: kickside
 profiles:

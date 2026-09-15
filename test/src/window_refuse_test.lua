@@ -102,9 +102,9 @@ local function next_count(closes: any, seconds: string): any
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop refused close", function()
+    test.describe("chicago.tui_desktop refused close", function()
         test.it("a window that refuses stays without a notice and is asked again; a stranger cannot refuse for it", function()
-            local desk = boot("windows.tui_desktop.test.refuse")
+            local desk = boot("chicago.tui_desktop.test.refuse")
             local reports = desk.service .. ".refuser"
             process.registry.register(reports)
             local closes = process.listen("probe.closes", {message = true})

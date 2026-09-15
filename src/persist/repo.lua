@@ -12,7 +12,7 @@ local json = require("json")
 -- The default value is in code, overridable by the environment: the database
 -- resource belongs to the application, not to the module.
 local DB_ID = env.get("TUI_DESKTOP_DB_ID") or "app:db"
-local TABLE = "windows_tui_desktop_windows"
+local TABLE = "chicago_tui_desktop_windows"
 
 local repo = {}
 

@@ -100,9 +100,9 @@ local function open(desk: any, spec: any): any
 end
 
 local function define_tests()
-    test.describe("windows.tui_desktop close requests", function()
+    test.describe("chicago.tui_desktop close requests", function()
         test.it("a window that refuses stays with a notice; one that closes itself goes; force kills; a PTY closes", function()
-            local desk = boot("windows.tui_desktop.test.close")
+            local desk = boot("chicago.tui_desktop.test.close")
 
             local stubborn = open(desk, {entry = "app:stubborn_window", w = 30, h = 8, x = 2, y = 2})
             local answer = ask(desk, "desktop.close", {id = stubborn})
@@ -147,7 +147,7 @@ local function define_tests()
         end)
 
         test.it("shutdown does not ask: a window that refuses is killed after the grace, a pending request too", function()
-            local desk = boot("windows.tui_desktop.test.close.quit")
+            local desk = boot("chicago.tui_desktop.test.close.quit")
             open(desk, {entry = "app:stubborn_window", w = 30, h = 8, x = 2, y = 2})
             local waiting = open(desk, {entry = "app:stubborn_window", w = 30, h = 8, x = 34, y = 2})
             -- A request already pending when shutdown comes: shutdown stops

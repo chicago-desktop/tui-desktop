@@ -1,5 +1,5 @@
 version: "1.0"
-namespace: windows.tui_desktop
+namespace: chicago.tui_desktop
 
 # A windowing desktop in the terminal.
 #
@@ -33,7 +33,7 @@ entries:
       comment: The database where windows built in the runtime are stored.
     default: app:db
     targets:
-      - entry: windows.tui_desktop.migrations:01_create_windows
+      - entry: chicago.tui_desktop.migrations:01_create_windows
         path: .meta.target_db
 
   - name: api_router
@@ -42,17 +42,17 @@ entries:
       comment: The HTTP router the command channel and the workshop attach to. It must require authentication and endpoint_firewall.
     default: app:api
     targets:
-      - entry: windows.tui_desktop.api:list_windows.endpoint
+      - entry: chicago.tui_desktop.api:list_windows.endpoint
         path: .meta.router
-      - entry: windows.tui_desktop.api:open_window.endpoint
+      - entry: chicago.tui_desktop.api:open_window.endpoint
         path: .meta.router
-      - entry: windows.tui_desktop.api:create_app.endpoint
+      - entry: chicago.tui_desktop.api:create_app.endpoint
         path: .meta.router
-      - entry: windows.tui_desktop.api:list_apps.endpoint
+      - entry: chicago.tui_desktop.api:list_apps.endpoint
         path: .meta.router
-      - entry: windows.tui_desktop.api:delete_app.endpoint
+      - entry: chicago.tui_desktop.api:delete_app.endpoint
         path: .meta.router
-      - entry: windows.tui_desktop.api:window_action.endpoint
+      - entry: chicago.tui_desktop.api:window_action.endpoint
         path: .meta.router
 
   # ─── Hosts ───────────────────────────────────────────────────────────

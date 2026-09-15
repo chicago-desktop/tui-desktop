@@ -28,7 +28,7 @@ local CONTEXT_KEY = "tui_desktop.service"
 
 -- The fallback name is the standard shell. A window started by an old
 -- compositor or by someone else's launch behaves as before instead of crashing.
-local DEFAULT_SERVICE = "windows.tui_desktop.desktop"
+local DEFAULT_SERVICE = "chicago.tui_desktop.desktop"
 
 -- The module is declared by THIS library, not by the window's entry: a library
 -- gets its own modules, so a window written before the name appeared in the

@@ -2,12 +2,12 @@
   "templateVersion": 1,
   "initialized": true,
   "identity": {
-    "organization": "windows",
+    "organization": "chicago",
     "module": "tui-desktop",
-    "namespace": "windows.tui_desktop",
-    "tag": "windows-tui-desktop",
+    "namespace": "chicago.tui_desktop",
+    "tag": "chicago-tui-desktop",
     "route": "tui-desktop",
     "title": "TUI Desktop",
-    "githubOwner": "wippy-windows"
+    "githubOwner": "chicago-desktop"
   }
 }
