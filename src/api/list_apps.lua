@@ -1,8 +1,8 @@
--- GET /tui-desktop/apps — окна, собранные в рантайме и сохранённые.
+-- GET /tui-desktop/apps — windows built in the runtime and saved.
 --
--- Отдаёт и признак `live`: есть ли запись в реестре прямо сейчас. Строка без
--- записи означает, что окно сохранено, но не поднялось — а это ровно то, что
--- иначе выглядит как «окно пропало».
+-- Also returns the `live` flag: whether the registry has the entry right now.
+-- A row without an entry means the window is saved but did not come up — and
+-- that is exactly what otherwise looks like "the window vanished".
 
 local http = require("http")
 local registry = require("registry")

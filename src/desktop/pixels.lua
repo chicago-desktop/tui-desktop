@@ -1,17 +1,18 @@
--- Кадр, в котором хром — картинки, а содержимое окон — символы.
+-- A frame in which the chrome is pictures and the windows' content is characters.
 --
--- Здесь только арифметика и разбор: ни одного вызова в рантайм, поэтому
--- проверяется прямо, без терминала и без графики.
+-- Only arithmetic and parsing here: not a single call into the runtime, so it
+-- is tested directly, without a terminal and without graphics.
 --
--- Две вещи, ради которых это отдельный файл:
+-- Two things this file exists separately for:
 --
---   * **Под картинкой обязаны быть пробелы.** Поверхность перерисовывает
---     изменившиеся строки; символ, оставшийся под размещением, вылезет
---     из-под него при первой же перерисовке — и никто не поймёт, откуда он.
---   * **Кривое размещение не должно ронять стол.** `present` отвергает КАДР
---     целиком, если хоть одно размещение неверно, а композитор зовёт его
---     через assert. Тема с одной опечаткой погасила бы весь десктоп, поэтому
---     негодное отбрасывается здесь и называется по имени.
+--   * **There must be spaces under a picture.** The surface redraws the rows
+--     that changed; a character left under a placement will crawl out from
+--     under it at the very first redraw — and nobody will understand where it
+--     came from.
+--   * **A malformed placement must not bring down the desktop.** `present`
+--     rejects the WHOLE frame if even one placement is invalid, and the
+--     compositor calls it through assert. A theme with one typo would put out
+--     the entire desktop, so an unfit placement is dropped here and named.
 
 local pixels = {}
 
@@ -22,11 +23,12 @@ local function whole(value: any)
     return integer
 end
 
--- check(placement) -> размещение | nil, причина
+-- check(placement) -> placement | nil, reason
 --
--- Правила те же, что у поверхности: непустой `id`, положительные `x`, `y`,
--- `cols`, `rows`. Растр НЕ обязателен: размещение без него означает «эта
--- картинка уже на экране, оставь как есть» — на этом стоит вся экономия.
+-- The rules are the same as the surface's: a non-empty `id`, positive `x`,
+-- `y`, `cols`, `rows`. The raster is NOT required: a placement without one
+-- means "this picture is already on screen, leave it as is" — all the savings
+-- rest on this.
 function pixels.check(placement: any)
     if type(placement) ~= "table" then return nil, "a placement is not a table" end
 
@@ -48,11 +50,11 @@ function pixels.check(placement: any)
     return {id = id, x = x, y = y, cols = cols, rows = rows, raster = placement.raster}, nil
 end
 
--- blank_under(canvas, placement) — стереть символы под картинкой.
+-- blank_under(canvas, placement) — erase the characters under a picture.
 function pixels.blank_under(canvas: any, placement: any)
-    -- Числа вынуты из таблицы `any`, поэтому проходят через math.tointeger:
-    -- линтер держит арифметику на них за ошибку, и он прав — сюда попадает
-    -- то, что вернула тема.
+    -- The numbers are taken out of an `any` table, so they go through
+    -- math.tointeger: the linter treats arithmetic on them as an error, and it
+    -- is right — what the theme returned ends up here.
     local cols = math.tointeger(placement.cols) or 0
     local rows = math.tointeger(placement.rows) or 0
     local x = math.tointeger(placement.x) or 1
@@ -64,13 +66,14 @@ function pixels.blank_under(canvas: any, placement: any)
     end
 end
 
--- hits(painted) -> {desktop, bars, menu}, жалоба или nil
+-- hits(painted) -> {desktop, bars, menu}, complaint or nil
 --
--- Разметка попаданий остаётся в ЯЧЕЙКАХ и делится на те же три вида, что и
--- при отрисовке символами: у стола, у полос и у меню разный смысл полей, и
--- один плоский список пришлось бы разбирать по догадке — а `id` там значит
--- разное. Плоский список поэтому не угадывается, а называется жалобой:
--- молча потерянные щелчки выглядят как мёртвый интерфейс.
+-- The hit layout stays in CELLS and is split into the same three kinds as in
+-- drawing with characters: the desktop, the bars and the menu give their
+-- fields different meanings, and one flat list would have to be parsed by
+-- guesswork — and `id` means different things there. So a flat list is not
+-- guessed at but named as a complaint: silently lost clicks look like a dead
+-- interface.
 function pixels.hits(painted: any)
     local given: any = type(painted) == "table" and painted.hits or nil
     if type(given) ~= "table" then
@@ -87,11 +90,12 @@ function pixels.hits(painted: any)
     }, nil
 end
 
--- frame(canvas, painted) -> размещения, жалобы
+-- frame(canvas, painted) -> placements, complaints
 --
--- Годные размещения возвращаются в порядке темы (он и есть порядок рисования)
--- и под каждым стирается канва. Жалобы — список строк: их называет
--- композитор, потому что тема о состоянии экрана не узнает никак.
+-- Valid placements are returned in the theme's order (which is the drawing
+-- order), and the canvas is erased under each. Complaints are a list of
+-- strings: the compositor names them, because the theme has no way to learn
+-- about the state of the screen.
 function pixels.frame(canvas: any, painted: any)
     local list: any = type(painted) == "table" and painted.placements or nil
     local images, complaints, seen = {}, {}, {}
@@ -108,8 +112,8 @@ function pixels.frame(canvas: any, painted: any)
         if not placement then
             complaints[#complaints + 1] = tostring(reason)
         elseif seen[placement.id] then
-            -- Два размещения с одним id — это не два рисунка, а спор о том,
-            -- какой из них показать; на экране он выглядит миганием.
+            -- Two placements with one id are not two pictures but a dispute
+            -- over which one to show; on screen it looks like flickering.
             complaints[#complaints + 1] = "placement " .. placement.id .. " is named twice"
         else
             seen[placement.id] = true

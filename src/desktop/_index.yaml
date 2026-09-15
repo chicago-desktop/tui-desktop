@@ -28,7 +28,7 @@ entries:
   - name: chrome
     kind: library.lua
     meta:
-      comment: Штатная тема — рамки, заголовки, кнопки, полоса окон и статусная строка. Чистые строки без единого вызова в рантайм.
+      comment: The standard theme — borders, titles, buttons, the window bar and the status line. Pure strings without a single call into the runtime.
     source: file://chrome.lua
     modules:
       - tty
@@ -37,45 +37,45 @@ entries:
   - name: programs
     kind: library.lua
     meta:
-      comment: Что запись реестра говорит о своей программе — тип окна и признак «показывать в меню». Чистые таблицы, ни одного вызова в рантайм.
+      comment: What a registry entry says about its program — the window type and the "show in the menu" flag. Pure tables, not a single call into the runtime.
     source: file://programs.lua
 
   # windows.tui_desktop.desktop:pixels
   - name: pixels
     kind: library.lua
     meta:
-      comment: Сборка пиксельного кадра — пробелы под картинками, разбор размещений и попаданий. Чистая арифметика, ни одного вызова в рантайм.
+      comment: Assembling the pixel frame — spaces under pictures, parsing placements and hits. Pure arithmetic, not a single call into the runtime.
     source: file://pixels.lua
 
   # windows.tui_desktop.desktop:window_api
   - name: window_api
     kind: library.lua
     meta:
-      comment: Что окно может попросить у десктопа — открыть, закрыть, поднять соседнее окно. Имя композитора берётся из контекста процесса, а не из константы.
+      comment: What a window can ask of the desktop — open, close, raise a neighbouring window. The compositor's name is taken from the process context, not from a constant.
     source: file://window_api.lua
     imports:
       input: windows.tui_desktop.desktop:input
     modules:
       - process
-      # Имя своего композитора окно читает отсюда. Модуль объявлен ЗДЕСЬ, а не
-      # у записи окна: библиотека получает свои модули, поэтому окна, написанные
-      # до этого поля, работают без единой правки.
+      # A window reads the name of its compositor from here. The module is declared HERE, not
+      # in the window's entry: a library gets its own modules, so windows written
+      # before this field work without a single edit.
       - ctx
-      # Отказ «десктоп не найден» иначе не расскажет о себе никак: `open`
-      # ответа не ждёт, и окно, не проверившее возврат, промолчит.
+      # Otherwise the "desktop not found" refusal would not report itself at all: `open`
+      # does not wait for a reply, and a window that did not check the return value stays silent.
       - logger
-      # Ответ приходит своим каналом, и ожидание его ограничено сроком.
+      # The reply arrives on its own channel, and waiting for it is limited by a deadline.
       - channel
       - time
 
   # windows.tui_desktop.desktop:library
   #
-  # Механика композитора без вида. Вторая оболочка зовёт её со своей темой:
-  # так вид меняется, не копируя хостинг окон, PTY и командный канал.
+  # The compositor's mechanics without the look. A second shell calls it with its own theme:
+  # that way the look changes without copying window hosting, the PTY and the command channel.
   - name: library
     kind: library.lua
     meta:
-      comment: Композитор как вызываемая библиотека — run(options) с темой в options.chrome. Контракт темы описан в README.
+      comment: The compositor as a callable library — run(options) with the theme in options.chrome. The theme contract is described in the README.
     source: file://library.lua
     modules:
       - channel
@@ -92,24 +92,24 @@ entries:
       apps: windows.tui_desktop.persist:apps
       programs: windows.tui_desktop.desktop:programs
       pixels: windows.tui_desktop.desktop:pixels
-      # Ради одного ключа: имя композитора кладётся окну в контекст под тем
-      # же именем, под которым окно его читает.
+      # For the sake of one key: the compositor's name is put into a window's context under the
+      # same name the window reads it by.
       window_api: windows.tui_desktop.desktop:window_api
 
   # windows.tui_desktop.desktop:desktop
   - name: desktop
     kind: process.lua
     meta:
-      comment: Композитор — единственный процесс на настоящем терминале. Держит окна, раздаёт ввод, принимает команды снаружи.
+      comment: The compositor — the only process on the real terminal. Holds the windows, dispatches input, accepts commands from outside.
       command:
         name: desktop
-        short: Оконный десктоп в терминале
+        short: Windowing desktop in the terminal
         security:
           actor: {id: windows.tui_desktop.desktop:desktop}
           policies:
             - windows.tui_desktop.security:desktop_runtime
-            # Хранилище окон читает имя базы из окружения (persist:repo), и без
-            # этого права оно молча берёт умолчание.
+            # The window storage reads the database name from the environment (persist:repo), and without
+            # this permission it silently takes the default.
             - windows.tui_desktop.security:storage_env
     source: file://desktop.lua
     method: main
@@ -134,13 +134,13 @@ entries:
       type: tui_desktop.window
       title: Bash
       group: Programs
-      # Значка здесь нет нарочно: свой у основы только вид «программа», и
-      # он и так умолчание по виду. Названный здесь значок был бы
-      # ПРИОРИТЕТНЕЕ объявления оболочки (`windows.program_images`), то есть
-      # оболочка не могла бы дать окну свой — а имена значков это её пакет.
+      # There is no icon here on purpose: the base has its own only for the "program" kind, and
+      # it is the default for the kind anyway. An icon named here would take
+      # PRIORITY over the shell's declaration (`windows.program_images`), that is,
+      # the shell could not give the window its own — and icon names are its package.
       width: 80
       height: 24
-      comment: Окно с настоящей программой под PTY. Видит обычный tty-порт и не знает, что оно окно.
+      comment: A window with a real program under a PTY. It sees an ordinary tty port and does not know it is a window.
       # The program runs under this entry's policy (exec allowed), not the
       # logged-on person's: it is a shell on the server. So the compositor
       # opens it only for an identity whose scope allows this action.

@@ -281,7 +281,7 @@ local function define_tests()
             local opened = wait_listing(desk, function(at: any) return #at.windows == 1 end,
                 "a click on a widget opens its window")
             test.eq(tostring(opened.windows[1].entry), "app:menu_target")
-            test.eq(tostring(opened.windows[1].title), "Мишень меню", "the window keeps its own title")
+            test.eq(tostring(opened.windows[1].title), "Menu target", "the window keeps its own title")
             test.eq(tostring(opened.selected), "i2", "a widget is never selected")
 
             -- Again, twice and fast: the open window is raised, not copied, and

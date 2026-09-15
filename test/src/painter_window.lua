@@ -1,12 +1,12 @@
--- Окно, которое кладёт в свой viewport одну узнаваемую строку.
+-- A window that puts one recognizable line into its viewport.
 --
--- Нужно затем, что в пиксельном режиме содержимое окна кладёт композитор:
--- пустое окно не отличило бы «положил» от «нечего класть».
+-- It is needed because in pixel mode the window's content is placed by the
+-- compositor: an empty window would not tell "placed it" from "nothing to place".
 local channel = require("channel")
 local time = require("time")
 local tty = require("tty")
 
-local MARK = "СОДЕРЖИМОЕ"
+local MARK = "CONTENT"
 
 local function main()
     local events = assert(tty.events())

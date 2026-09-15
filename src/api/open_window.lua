@@ -1,10 +1,10 @@
--- POST /tui-desktop/windows — открыть окно с программой.
+-- POST /tui-desktop/windows — open a window with a program.
 --
--- Тело: {"entry": "…:window_calc", "args": "…", "command": "...",
+-- Body: {"entry": "…:window_calc", "args": "…", "command": "...",
 --         "title": "...", "x": 1, "y": 2, "w": 80, "h": 20}.
--- `args` — параметр окна-приложения, `command` — программа для PTY-окна.
--- Всё необязательно; без записи открывается окно с интерактивным bash, и
--- тогда `command` называет программу.
+-- `args` — the application window's parameter, `command` — the program for a PTY window.
+-- Everything is optional; without an entry a window with an interactive bash
+-- opens, and then `command` names the program.
 local http = require("http")
 local json = require("json")
 local security = require("security")

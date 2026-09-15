@@ -1,8 +1,9 @@
--- Композитор целиком, поднятый в тесте.
+-- The whole compositor, brought up in a test.
 --
--- Экран у него настоящий, только не терминал, а viewport, выданный тестом:
--- поэтому проверка родства окон идёт через живой композитор, а не через форму
--- реестра. Имя приезжает аргументом, чтобы прогоны не спорили за одно.
+-- Its screen is real, only not a terminal but a viewport handed out by the test:
+-- so the window kinship check goes through a live compositor rather than
+-- through the registry's shape. The name arrives as an argument so that runs
+-- do not fight over one.
 local library = require("library")
 local chrome = require("chrome")
 

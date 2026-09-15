@@ -1,20 +1,21 @@
 version: "1.0"
 namespace: windows.tui_desktop.persist
 
-# Хранилище окон, собранных в рантайме.
+# Storage of windows built in the runtime.
 #
-# Возвращает их в реестр композитор, а не фоновый сервис: платформа намеренно
-# запрещает процессам в группе `wippy.security:process` менять реестр —
-# политика `wippy.security:registry.no_write` перекрывает разрешения явным
-# `deny`. Обходить этот запрет ради восстановления окон не стоит, а композитор
-# работает под собственным актором, и права у него свои.
+# They are returned to the registry by the compositor, not by a background
+# service: the platform deliberately forbids processes in the group
+# `wippy.security:process` to change the registry — the policy
+# `wippy.security:registry.no_write` overrides permissions with an explicit
+# `deny`. Working around this ban to restore windows is not worth it, and the
+# compositor runs under its own actor and has its own permissions.
 
 entries:
   # windows.tui_desktop.persist:repo
   - name: repo
     kind: library.lua
     meta:
-      comment: Одна строка на окно; имя — ключ, повторная сборка перезаписывает.
+      comment: One row per window; the name is the key, a repeated build overwrites.
     source: file://repo.lua
     modules:
       - sql
@@ -25,7 +26,7 @@ entries:
   - name: apps
     kind: library.lua
     meta:
-      comment: Сборка записи реестра из сохранённого окна — общая для мастерской и загрузчика.
+      comment: Building a registry entry from a saved window — shared by the workshop and the loader.
     source: file://apps.lua
     modules:
       - registry

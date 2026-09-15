@@ -4,18 +4,21 @@ Read and follow [AGENTS.md](AGENTS.md) in full before changing this repository.
 It defines the implementation, verification, security, and publishing
 requirements.
 
-Устройство модуля и его командный канал описаны в [README.md](README.md).
-Ниже — то, что нужно знать до первой правки и чего не видно из кода.
+The module's design and its command channel are described in [README.md](README.md).
+Below is what you need to know before the first edit and what the code does not
+show.
 
-## Проверять изменения приходится глазами
+## Changes have to be checked by eye
 
-Полноэкранную программу не проверить кодом возврата: без настоящего терминала
-она не запускается вовсе, а запущенная пишет не строки, а поток с абсолютным
-позиционированием. `make test` проверяет форму реестра — он не увидит ни съехавшую
-рамку, ни потерянный ввод, ни курсор, вставший строкой выше своего текста.
+A full-screen program cannot be checked by its exit code: without a real
+terminal it does not start at all, and once running it writes not lines but a
+stream with absolute positioning. `make test` checks the shape of the registry —
+it will not see a shifted border, lost input, or a cursor that ended up one row
+above its text.
 
-Харнесс поднимает десктоп без всякого приложения, а пробник даёт ему PTY
-заданного размера, печатает по сценарию и разбирает поток в текстовую сетку:
+The harness starts the desktop without any application, and the probe gives it a
+PTY of a given size, types according to a script and parses the stream into a
+text grid:
 
 ```bash
 cd test && python3 ../tools/tui-probe.py \
@@ -24,39 +27,40 @@ cd test && python3 ../tools/tui-probe.py \
     -- wippy run --host windows.tui_desktop:terminal desktop
 ```
 
-`--boot` брать не меньше 60 секунд: до первого кадра поднимается весь рантайм.
-Правку отрисовки или ввода **показывать снимком экрана** — своим или чужим
-глазом, но снимком.
+Take `--boot` of at least 60 seconds: the whole runtime starts before the first
+frame. **Show a rendering or input change with a screen snapshot** — checked by
+your own eye or someone else's, but with a snapshot.
 
-## `make test` требует `--host`
+## `make test` requires `--host`
 
-Модуль объявляет собственный `terminal.host` — ему нужен `hide_logs`, — и с этого
-момента автодетект в CLI отказывается выбирать: он считает записи `terminal.host`,
-а их две. В Makefile это зашито (`TEST_HOST`); при запуске `wippy test` руками
-флаг придётся назвать самому.
+The module declares its own `terminal.host` — it needs `hide_logs` — and from
+then on the CLI's autodetection refuses to choose: it counts `terminal.host`
+entries, and there are two. The Makefile has this built in (`TEST_HOST`); when
+running `wippy test` by hand you have to name the flag yourself.
 
-## `wippy lint` строго различает `integer` и `number`
+## `wippy lint` strictly distinguishes `integer` and `number`
 
-Рисующие вызовы (`canvas:put`, `string.rep`, `tty.text.truncate`) требуют
-`integer`, а `math.floor`, `math.max`, `//` и любое числовое сравнение дают
-`number`. Обычная арифметика над размерами экрана поэтому не проходит. Что
-работает:
+Drawing calls (`canvas:put`, `string.rep`, `tty.text.truncate`) require
+`integer`, while `math.floor`, `math.max`, `//` and any numeric comparison give
+`number`. Ordinary arithmetic on screen sizes therefore does not pass. What
+works:
 
-- **`: any` у параметра** — `function f(width: any)`; аннотации поддерживает и
-  рантайм. `any` проходит там, где отвергают `number`, но `tty.text.truncate`
-  требует именно `integer`.
-- **`math.tointeger(x) or 0`** — надёжный способ получить `integer` из значения,
-  пришедшего из рантайма.
-- **Границу выбирать выражением** (`w < 1 and 1 or w`): переприсваивание
-  возвращает тип к `number`.
-- **Держать одну структуру с полным набором полей**: поле, добавленное к таблице
-  позже, для проверяющего не существует — отсюда «arithmetic on never».
+- **`: any` on the parameter** — `function f(width: any)`; the runtime supports
+  annotations too. `any` passes where `number` is rejected, but
+  `tty.text.truncate` requires exactly `integer`.
+- **`math.tointeger(x) or 0`** — a reliable way to get an `integer` from a value
+  that came from the runtime.
+- **Choose a bound with an expression** (`w < 1 and 1 or w`): reassignment
+  returns the type to `number`.
+- **Keep one structure with the full set of fields**: a field added to a table
+  later does not exist for the checker — hence "arithmetic on never".
 
-Без этого правка уходит в десяток прогонов линта на угадывание.
+Without this, an edit turns into a dozen lint runs of guesswork.
 
-## Две ловушки рантайма
+## Two runtime traps
 
-Хвостовой вызов yield-функции и экран без размера описаны в README, в разделе
-«Две ловушки, стоившие здесь времени». Обе молчаливые: первая не выполняет вызов
-вовсе, вторая роняет композитор на первой строке. Новый код в `src/desktop/`
-обязан обёртывать вызовы `tty` в `assert(...)` и проверять геометрию.
+The tail call of a yield function and the screen without a size are described in
+the README, in the section "Two traps that cost time here". Both are silent: the
+first does not perform the call at all, the second crashes the compositor on its
+first line. New code in `src/desktop/` must wrap `tty` calls in `assert(...)` and
+check the geometry.

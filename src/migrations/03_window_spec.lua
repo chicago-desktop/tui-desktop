@@ -1,13 +1,14 @@
--- Описание окна из мастерской сверх кода: импорты библиотек, значок, тип
--- окна, пиксельный вид.
+-- The workshop window's description beyond the code: library imports, icon,
+-- window type, pixel view.
 --
--- До этой колонки окно из мастерской умело только рисовать себя само на tty:
--- импорт у него был один, фиксированный. Окно на SDK оболочки — дерево
--- компонентов, общий отрисовщик, пиксельный вид — объявляет импорт `app` и
--- `pixel_render`, и объявить их было негде. Одна колонка JSON, а не колонка
--- на поле: поля эти — форма записи реестра, и расти они будут вместе с ней.
+-- Before this column a workshop window could only draw itself on tty: it had
+-- one import, a fixed one. A window on the shell's SDK — a component tree, a
+-- shared renderer, a pixel view — declares the `app` import and
+-- `pixel_render`, and there was nowhere to declare them. One JSON column, not
+-- a column per field: these fields are the shape of a registry entry, and
+-- they will grow along with it.
 --
--- '{}' — «ничего не объявлено»: окно собирается как раньше.
+-- '{}' — "nothing declared": the window is built as before.
 
 return require("migration").define(function()
     migration("Add spec to windows_tui_desktop_windows", function()

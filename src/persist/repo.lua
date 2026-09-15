@@ -1,22 +1,23 @@
--- Окна, собранные в рантайме. Одна строка на окно, имя — ключ.
+-- Windows built in the runtime. One row per window, the name is the key.
 --
--- Ручка мастерской пишет сюда и применяет запись в реестр; загрузчик читает
--- это на старте и возвращает окна в реестр после перезапуска. Без таблицы
--- собранное окно живёт ровно до конца процесса.
+-- The workshop endpoint writes here and applies the entry to the registry; the
+-- loader reads this at start and brings the windows back into the registry
+-- after a restart. Without the table a built window lives exactly until the
+-- process ends.
 
 local sql = require("sql")
 local env = require("env")
 local json = require("json")
 
--- Значение по умолчанию в коде, переопределяемое окружением: ресурс базы
--- принадлежит приложению, а не модулю.
+-- The default value is in code, overridable by the environment: the database
+-- resource belongs to the application, not to the module.
 local DB_ID = env.get("TUI_DESKTOP_DB_ID") or "app:db"
 local TABLE = "windows_tui_desktop_windows"
 
 local repo = {}
 
--- Соединение возвращается на КАЖДОМ пути, включая ошибку внутри работы:
--- потерянное соединение не даёт о себе знать, пока не кончится пул.
+-- The connection is returned on EVERY path, including an error inside the
+-- work: a lost connection gives no sign of itself until the pool runs out.
 local function with_db(work)
     local db, err = sql.get(DB_ID)
     if err or not db then return nil, err or ("database unavailable: " .. DB_ID) end
@@ -33,9 +34,9 @@ local function decode_modules(raw)
     return decoded
 end
 
--- Описание сверх кода (импорты, значок, тип окна, пиксельный вид) — JSON в
--- колонке `spec` (миграция 03). Строка без колонки читается как «ничего
--- не объявлено», а не как отказ.
+-- The description beyond the code (imports, icon, window type, pixel view) —
+-- JSON in the `spec` column (migration 03). A row without the column reads as
+-- "nothing declared", not as a refusal.
 local function decode_spec(raw: any): any
     if type(raw) ~= "string" or raw == "" then return {} end
     local decoded = json.decode(raw)
@@ -51,8 +52,9 @@ local function to_window(row: any)
         height = tonumber(row.height) or 0,
         source = row.source,
         modules = decode_modules(row.modules),
-        -- Папка меню; пусто — не названа. Колонка появилась миграцией 02,
-        -- поэтому читается с запасом на строку, где её ещё нет.
+        -- The menu folder; empty — not named. The column appeared with
+        -- migration 02, so it is read allowing for a row that does not have
+        -- it yet.
         group = type(row.menu_group) == "string" and row.menu_group or "",
         spec = decode_spec(row.spec),
         created_at = row.created_at,
@@ -60,8 +62,8 @@ local function to_window(row: any)
     }
 end
 
--- Сохранить окно. Повторное имя перезаписывает: история правок здесь не
--- ведётся, и «имя занято» было бы отказом чинить собственное окно.
+-- Save a window. A repeated name overwrites: no edit history is kept here, and
+-- "name taken" would be a refusal to fix one's own window.
 function repo.save(window)
     return with_db(function(db)
         local modules = json.encode(window.modules or {})
@@ -100,8 +102,8 @@ function repo.list()
     end)
 end
 
--- Возвращает, была ли строка: «удалил несуществующее» и «удалил» — разные
--- ответы, иначе опечатка в имени выглядит успехом.
+-- Returns whether the row existed: "deleted a nonexistent one" and "deleted"
+-- are different answers, otherwise a typo in the name looks like success.
 function repo.delete(name)
     return with_db(function(db)
         local rows, err = db:query(

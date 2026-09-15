@@ -1,109 +1,113 @@
 ---
 name: tui-desktop
-description: Управлять окнами живого десктопа windows/tui-desktop через его командный канал — открыть окно с программой, напечатать в него, прочитать его экран, переставить или закрыть окно, поднять сам десктоп.
+description: Drive the windows of a live windows/tui-desktop desktop through its command channel — open a window with a program, type into it, read its screen, move or close a window, start the desktop itself.
 ---
 
-# Управление десктопом
+# Driving the desktop
 
-Десктоп держит окна с настоящими программами. Через командный канал ими
-управляет агент, пока за тем же экраном работает человек: композитор один и сам
-сериализует клавиатуру с командами.
+The desktop holds windows with real programs. An agent drives them through the
+command channel while a person works at the same screen: there is one
+compositor, and it serializes keyboard input and commands itself.
 
-Работать через канал, а не через клавиатуру человека: его терминал вам не
-принадлежит.
+Work through the channel, not through the person's keyboard: their terminal
+does not belong to you.
 
-## Адрес и доступ
+## Address and access
 
-Ручки живут за аутентифицированным роутером приложения, и **префикс задаёт
-приложение, а не модуль**: на стенде kickside это `/api/v1`, в харнессе модуля
-— `/api`. Ошибка здесь не выглядит ошибкой: неизвестный путь отдаёт страницу
-фасада с кодом 200, то есть «ручки нет» неотличимо от «ручка ответила».
-Признак попадания — `application/json` в ответе.
+The endpoints live behind the application's authenticated router, and **the
+prefix is set by the application, not the module**: on the kickside stand it is
+`/api/v1`, in the module's harness — `/api`. A mistake here does not look like
+a mistake: an unknown path returns the facade page with code 200, so "there is
+no endpoint" is indistinguishable from "the endpoint answered". The sign of a
+hit is `application/json` in the response.
 
-Токен берётся из `.env.local` приложения (`KICKSIDE_API_TOKEN`) и живёт сутки;
-`{"error":"Authentication required"}` означает истёкший срок, а не поломку.
+The token comes from the application's `.env.local` (`KICKSIDE_API_TOKEN`) and
+lives for one day; `{"error":"Authentication required"}` means it expired, not
+that something broke.
 
 ```bash
 set -a; . ./.env.local; set +a
-API="http://localhost:8099/api/v1/tui-desktop"     # префикс — от приложения
+API="http://localhost:8099/api/v1/tui-desktop"     # the prefix comes from the application
 AUTH="Authorization: Bearer $KICKSIDE_API_TOKEN"
 ```
 
-## Что можно сделать
+## What you can do
 
-Каждая команда отвечает `{"success":true,...}` или причиной отказа. Молчания не
-бывает: незапущенный десктоп, неотвечающий десктоп и несуществующее окно — три
-разных ответа.
+Every command answers `{"success":true,...}` or the reason for a refusal. There
+is no silence: a desktop that is not running, a desktop that does not respond
+and a window that does not exist are three different answers.
 
 ```bash
-curl -s -H "$AUTH" $API/windows                       # что открыто, фокус, размер экрана
+curl -s -H "$AUTH" $API/windows                       # what is open, focus, screen size
 
 curl -s -H "$AUTH" -H 'Content-Type: application/json' -X POST \
-  -d '{"title":"сборка","command":"/bin/bash --noprofile --norc","x":4,"y":3,"w":80,"h":20}' \
+  -d '{"title":"build","command":"/bin/bash --noprofile --norc","x":4,"y":3,"w":80,"h":20}' \
   $API/windows                                        # → {"window":{"id":"w1",...}}
 
 curl -s -H "$AUTH" -H 'Content-Type: application/json' -X POST \
-  -d '{"entry":"app.desktop:window_calc"}' $API/windows   # окно-приложение
+  -d '{"entry":"app.desktop:window_calc"}' $API/windows   # an application window
 
 curl -s -H "$AUTH" -H 'Content-Type: application/json' -X POST \
   -d '{"text":"make test","enter":true}' $API/windows/w1/type
 
 curl -s -H "$AUTH" -H 'Content-Type: application/json' -X POST \
-  -d '{}' $API/windows/w1/screen                      # → {"rows":[...]} — экран окна
+  -d '{}' $API/windows/w1/screen                      # → {"rows":[...]} — the window's screen
 ```
 
-Окно с программой открывается `command`, окно-приложение — `entry` (запись
-процесса, объявленная приложением). Что объявлено, видно в меню десктопа по
-`alt+o`; ту же пометку `meta.type: tui_desktop.window` можно искать в реестре.
+A window with a program is opened with `command`, an application window with
+`entry` (a process entry declared by the application). What is declared is
+visible in the desktop menu on `alt+o`; the same mark `meta.type:
+tui_desktop.window` can be searched for in the registry.
 
-Остальные действия того же вида: `key` (`key`, `ctrl`, `alt`, `shift`), `move`
-(`x`, `y`), `resize` (`w`, `h`), `focus`, `minimize` (`value`), `close`.
+The other actions have the same form: `key` (`key`, `ctrl`, `alt`, `shift`),
+`move` (`x`, `y`), `resize` (`w`, `h`), `focus`, `minimize` (`value`), `close`.
 
-## Как читать результат
+## How to read the result
 
-**Экран — единственная улика.** Код возврата `type` говорит лишь о том, что
-клавиши доехали до окна; что программа с ними сделала, видно только в `screen`.
-Поэтому после каждого содержательного ввода читать экран и судить по нему.
+**The screen is the only evidence.** The return code of `type` only says that
+the keys reached the window; what the program did with them is visible only in
+`screen`. So after every meaningful input, read the screen and judge by it.
 
-**Окно отвечает не мгновенно.** Свежее окно отдаёт `"ready": false`, пока
-программа не нарисовала первый кадр; ввод в этот промежуток отклоняется с
-причиной. Читать `screen` повторно, пока не появится ожидаемое, а не сразу
-после `type`.
+**A window does not respond instantly.** A fresh window returns `"ready":
+false` until the program has drawn its first frame; input during that interval
+is refused with a reason. Read `screen` repeatedly until the expected content
+appears, not right after `type`.
 
-**Экран — снимок, а не журнал.** В `rows` лежит то, что видно сейчас: длинный
-вывод уезжает вверх безвозвратно. Команде, чей вывод нужен целиком, дать файл
-(`make test > /tmp/out.log 2>&1`) и прочитать его отдельно.
+**The screen is a snapshot, not a log.** `rows` holds what is visible now: long
+output scrolls off the top for good. Give a command whose output you need in
+full a file (`make test > /tmp/out.log 2>&1`) and read it separately.
 
-## Собрать новое окно
+## Building a new window
 
-Окно можно не писать файлом: его код едет в теле запроса, применяется в реестр
-и появляется в меню сразу.
+A window does not have to be written as a file: its code travels in the request
+body, is applied to the registry and appears in the menu immediately.
 
 ```bash
 curl -s -H "$AUTH" -H 'Content-Type: application/json' -X POST \
-  -d '{"name":"clock","title":"Часы","width":30,"height":6,
+  -d '{"name":"clock","title":"Clock","width":30,"height":6,
        "modules":["time"],"source":"local tty = require(\"tty\") … return {main = main}"}' \
   ${API%/tui-desktop}/tui-desktop/apps
 ```
 
-Код обязан возвращать таблицу с `main`, а модули берутся из белого списка
-(`channel`, `time`, `tty`, `json`, `sql`, `env`; `tty` и `channel` добавляются
-всегда). Сохранённое окно переживает перезапуск: `GET /tui-desktop/apps`
-показывает список и признак `live`, `DELETE /tui-desktop/apps/{name}` убирает.
+The code must return a table with `main`, and modules are taken from an
+allowlist (`channel`, `time`, `tty`, `json`, `sql`, `env`; `tty` and `channel`
+are always added). A saved window survives a restart: `GET /tui-desktop/apps`
+shows the list and the `live` flag, `DELETE /tui-desktop/apps/{name}` removes
+one.
 
-Открывается такое окно как любое другое — по `entry` из ответа.
+Such a window is opened like any other — by the `entry` from the response.
 
-## Поднять десктоп
+## Starting the desktop
 
 ```bash
 wippy run --host windows.tui_desktop:terminal desktop
 ```
 
-`--host` обязателен: автодетект терминального хоста в CLI считает записи
-`terminal.host`, а этот модуль приносит вторую. Команда занимает терминал
-целиком и поднимает полный рантайм вместе со шлюзом, поэтому запускать её
-должен человек — у агента нет терминала, а без него `screen_size()` отвечает
-нулями.
+`--host` is required: the CLI's terminal host autodetection counts
+`terminal.host` entries, and this module brings a second one. The command takes
+over the whole terminal and starts the full runtime together with the gateway,
+so a person must start it — an agent has no terminal, and without one
+`screen_size()` answers with zeros.
 
-Проверить, поднят ли десктоп, можно одним `GET /windows`: он отвечает списком,
-а не «не запущен».
+Whether the desktop is up can be checked with a single `GET /windows`: it
+answers with a list, not "not running".

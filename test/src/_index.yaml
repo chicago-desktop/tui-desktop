@@ -7,7 +7,7 @@ namespace: app
 # co-located *_test.lua suites run in isolation. The router exists only so the
 # endpoint entries resolve; the command channel is covered as registry shape.
 #
-# Этот же харнесс поднимает десктоп руками, без приложения:
+# The same harness brings the desktop up by hand, without the application:
 #   cd test && wippy run --host windows.tui_desktop:terminal desktop
 # Harness-only; excluded from publish via the module wippy.yaml.
 
@@ -20,7 +20,7 @@ entries:
     kind: function.lua
     meta:
       type: test
-      comment: Хранилище окон переживает круг «сохранил — прочитал — удалил», а сборка записи реестра не пускает чужие модули.
+      comment: The window storage survives the "saved — read — deleted" round trip, and building a registry entry keeps foreign modules out.
       group: TUI Desktop
       suite: windows_tui_desktop
     source: file://storage_test.lua
@@ -35,7 +35,7 @@ entries:
     kind: function.lua
     meta:
       type: test
-      comment: Хосты, процессы, ручки и политики существуют и ссылаются друг на друга; лог на терминальном хосте заглушен, у командного канала нет права порождать процессы.
+      comment: Hosts, processes, endpoints and policies exist and reference each other; the log on the terminal host is muted, and the command channel has no permission to spawn processes.
       group: TUI Desktop
       suite: windows_tui_desktop
     source: file://wiring_test.lua
@@ -48,25 +48,25 @@ entries:
       window_api: windows.tui_desktop.desktop:window_api
     method: run
 
-  # Окно-заглушка в двух видах: с модулем ctx и без него. Двумя записями, а не
-  # параметром, потому что проверяется именно объявление записи: модуль окна
-  # выбирает не код окна, а тот, кто его объявил.
+  # A stub window in two forms: with the ctx module and without it. Two entries
+  # rather than a parameter, because what is checked is the entry's declaration:
+  # a window's modules are chosen not by the window's code but by whoever declared it.
   - name: window_probe
     kind: process.lua
     meta:
-      comment: Окно-заглушка, объявившая ctx — сообщает имя своего композитора.
+      comment: A stub window that declared ctx — reports the name of its compositor.
     source: file://window_probe.lua
     method: main
     modules: [process, ctx]
     imports:
       desktop: windows.tui_desktop.desktop:window_api
 
-  # Окно, которое спрашивает композитор. Режим приезжает аргументом: «naive» —
-  # цикл, съедающий чужое из inbox, «ask» — примитив ожидания из библиотеки.
+  # A window that asks the compositor. The mode arrives as an argument: "naive" —
+  # a loop that eats other messages from the inbox, "ask" — the library's waiting primitive.
   - name: ask_probe
     kind: process.lua
     meta:
-      comment: Окно-заглушка, задающая композитору вопрос; проверяет, переживает ли ожидание чужую команду.
+      comment: A stub window that asks the compositor a question; checks whether the wait survives someone else's command.
     source: file://ask_probe.lua
     method: main
     modules: [process, channel, time]
@@ -76,19 +76,19 @@ entries:
   - name: window_probe_bare
     kind: process.lua
     meta:
-      comment: Окно-заглушка без ctx — запись, написанная до того, как имя композитора начали передавать.
+      comment: A stub window without ctx — an entry written before the compositor's name started being passed.
     source: file://window_probe.lua
     method: main
     modules: [process]
     imports:
       desktop: windows.tui_desktop.desktop:window_api
 
-  # Композитор целиком, на viewport, выданном тестом. Модули те же, что у
-  # штатной оболочки: механика зовётся ровно так же, как в жизни.
+  # The whole compositor, on a viewport handed out by the test. The modules are
+  # the stock shell's: the mechanics are called exactly as in real use.
   - name: test_composer
     kind: process.lua
     meta:
-      comment: Композитор на viewport теста — родство окон проверяется на живом, а не по форме реестра.
+      comment: The compositor on the test's viewport — window kinship is checked on a live one, not by registry shape.
     source: file://test_composer.lua
     method: main
     modules: [channel, env, json, logger, process, registry, sql, time, tty]
@@ -99,23 +99,23 @@ entries:
   - name: pixel_chrome
     kind: library.lua
     meta:
-      comment: Растровая тема для проверок — размещения без растров, попадания в ячейках.
+      comment: A raster theme for the checks — placements without rasters, hits in cells.
     source: file://test_chrome_pixels.lua
 
   - name: flat_chrome
     kind: library.lua
     meta:
-      comment: Растровая тема, отдающая попадания плоским списком — так выглядит неверно прочитанный контракт.
+      comment: A raster theme that returns hits as a flat list — what a misread contract looks like.
     source: file://test_chrome_flat.lua
     imports:
       pixel_chrome: app:pixel_chrome
 
-  # Композитор в пиксельном режиме. Модуля gfx у него нет намеренно: размер
-  # ячейки приносит оболочка, и проверка ходит тем же путём, что настоящая.
+  # The compositor in pixel mode. It has no gfx module on purpose: the cell
+  # size is brought by the shell, and the check takes the same path as the real one.
   - name: test_composer_pixels
     kind: process.lua
     meta:
-      comment: Композитор с пиксельным хромом на viewport теста.
+      comment: The compositor with pixel chrome on the test's viewport.
     source: file://test_composer_pixels.lua
     method: main
     modules: [channel, env, json, logger, process, registry, security, sql, time, tty]
@@ -166,9 +166,9 @@ entries:
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Окно, которое рисует
+      title: Painting window
       in_menu: false
-      comment: Окно, которое кладёт в свой viewport одну узнаваемую строку.
+      comment: A window that puts one recognisable line into its viewport.
     source: file://painter_window.lua
     method: main
     modules: [channel, time, tty]
@@ -176,39 +176,39 @@ entries:
   - name: probe_render
     kind: library.lua
     meta:
-      comment: Вид окна — чистая библиотека отрисовки; ссылка на неё обязана вести в живую запись.
+      comment: The window's view — a pure rendering library; the reference to it must lead to a live entry.
     source: file://probe_render.lua
 
   - name: state_probe
     kind: process.lua
     meta:
-      comment: Поставщик состояния окна-вида — толкает состояние сам и принимает ввод.
+      comment: The state provider of a view window — pushes the state itself and takes input.
     source: file://state_probe.lua
     method: main
     modules: [channel, process, time]
 
-  # Окно-вид: процесса внутри нет, рисует тема, данные приносит поставщик.
+  # A view window: there is no process inside, the theme draws it, the provider brings the data.
   - name: view_window
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Окно-вид
+      title: View window
       in_menu: false
       window_content: pixels
       render: app:probe_render
       state: app:state_probe
-      comment: Окно, чьё содержимое рисует тема, а данные приносит отдельный процесс.
+      comment: A window whose content the theme draws while a separate process brings the data.
     source: file://idle_window.lua
     method: main
     modules: [channel, time]
 
-  # Две сломанные записи: обе обязаны отказать с причиной, а не открыться
-  # окном, которое нечем нарисовать.
+  # Two broken entries: both must refuse with a reason rather than open as
+  # a window there is nothing to draw with.
   - name: view_static
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Вид без поставщика
+      title: View without provider
       in_menu: false
       window_content: pixels
       render: app:probe_render
@@ -220,7 +220,7 @@ entries:
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Вид без отрисовки
+      title: View without render
       in_menu: false
       window_content: pixels
     source: file://idle_window.lua
@@ -231,7 +231,7 @@ entries:
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Вид с мёртвой ссылкой
+      title: View with dead reference
       in_menu: false
       window_content: pixels
       render: app:nowhere
@@ -239,24 +239,26 @@ entries:
     method: main
     modules: [channel, time]
 
-  # Единственная запись харнесса, которая ВИДНА в меню: так пункт, по которому
-  # щёлкает проверка, известен заранее и не зависит от порядка сортировки.
+  # The only harness entry that is VISIBLE in the menu: that way the item the
+  # check clicks is known in advance and does not depend on the sort order.
   - name: menu_target
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Мишень меню
-      comment: Окно, которое открывают из меню — и только из меню.
+      title: Menu target
+      comment: A window opened from the menu — and only from the menu.
     source: file://idle_window.lua
     method: main
     modules: [channel, time]
 
+  # The menu is sorted by title, and the suites expect this entry above
+  # menu_target: its title must sort before "Menu target".
   - name: menu_second
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Вторая мишень
-      comment: Второй пункт меню — без него стрелке в меню некуда двигаться.
+      title: Another target
+      comment: The second menu item — without it the arrow in the menu has nowhere to move.
     source: file://idle_window.lua
     method: main
     modules: [channel, time]
@@ -265,9 +267,9 @@ entries:
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Окно с диалогом
+      title: Window with a dialog
       in_menu: false
-      comment: Окно, которое открывает свой диалог и обычную программу рядом.
+      comment: A window that opens its own dialog and an ordinary program beside it.
     source: file://dialog_probe.lua
     method: main
     modules: [channel, process, time]
@@ -278,9 +280,9 @@ entries:
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Окно с промахом
+      title: Window with a miss
       in_menu: false
-      comment: Окно, которое шлёт промахивающуюся команду и слушает канал ответов.
+      comment: A window that sends a command that misses and listens on the reply channel.
     source: file://refusal_probe.lua
     method: main
     modules: [channel, process, time]
@@ -291,9 +293,9 @@ entries:
     kind: process.lua
     meta:
       type: tui_desktop.window
-      title: Просто окно
+      title: Plain window
       in_menu: false
-      comment: Окно без кадра и ввода — существует, пока его не закроют.
+      comment: A window without a frame or input — exists until it is closed.
     source: file://idle_window.lua
     method: main
     modules: [channel, time]
@@ -301,7 +303,7 @@ entries:
   - name: db
     kind: db.sql.sqlite
     meta:
-      comment: In-memory database — харнесс его не использует, но загрузчик просит ресурс.
+      comment: In-memory database — the harness does not use it, but the loader asks for the resource.
     file: ":memory:"
 
   - name: env_storage
@@ -343,14 +345,14 @@ entries:
   # windows/tui-desktop dependency with ../ so the module's canonical source and
   # colocated tests load directly without a lock-file replacement.
 
-  # Харнесс тестирует модуль, значит зависит от него. Замена в .wippy.yaml
-  # подставляет сюда рабочую копию из ../, поэтому исходник и колокейтед
-  # тесты грузятся напрямую, без публикации.
+  # The harness tests the module, so it depends on it. The replacement in .wippy.yaml
+  # substitutes the working copy from ../ here, so the source and the colocated
+  # tests load directly, without publishing.
   - name: tui_desktop_harness.dep.module
     version: "*"
     kind: ns.dependency
     meta:
-      comment: Модуль под тестом; источник подменяется на ../ в .wippy.yaml.
+      comment: The module under test; its source is replaced with ../ in .wippy.yaml.
     component: "windows/tui-desktop"
     parameters:
       - name: windows.tui_desktop:api_router

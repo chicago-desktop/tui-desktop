@@ -1,18 +1,18 @@
--- Окно, которое задаёт композитору вопрос и продолжает жить.
+-- A window that asks the compositor a question and keeps living.
 --
--- Два режима, и разница между ними — весь смысл проверки:
---   naive — ждать ответ, забирая всё из inbox (так делали до починки);
---   ask   — ждать ответ каналом топика, не трогая inbox.
+-- Two modes, and the difference between them is the whole point of the check:
+--   naive — wait for the answer by taking everything from the inbox (as before the fix);
+--   ask   — wait for the answer on the topic's channel, without touching the inbox.
 --
--- Отчитывается тем, что дошло ПОСЛЕ ответа: команда, посланная композитором,
--- пока окно ждало, обязана дождаться цикла окна.
+-- Reports what arrived AFTER the answer: a command the compositor sent while
+-- the window was waiting must wait for the window's loop.
 local process = require("process")
 local channel = require("channel")
 local time = require("time")
 local desktop = require("desktop")
 
--- Что ещё лежит в inbox. Срок короткий: всё, что должно было дойти, уже
--- отправлено к этому моменту.
+-- What else is in the inbox. The budget is short: everything that was due to
+-- arrive has been sent by this moment.
 local function drain(inbox, budget)
     local got = {}
     while true do
@@ -26,11 +26,11 @@ end
 
 local function main(mode)
     local inbox = process.inbox()
-    local answered, eaten = "нет", {}
+    local answered, eaten = "no", {}
 
     if mode == "naive" then
-        -- Ровно тот цикл, который здесь и чинится: чужое сообщение прочитано
-        -- и выброшено, вернуть его некуда.
+        -- Exactly the loop being fixed here: someone else's message is read
+        -- and thrown away, and there is nowhere to return it.
         local name = desktop.service()
         local pid = process.registry.lookup(name)
         process.send(pid, "desktop.list", {reply_to = tostring(process.pid())})
@@ -40,12 +40,12 @@ local function main(mode)
             local picked = channel.select({inbox:case_receive(), expiry:case_receive()})
             if picked.channel == expiry or not picked.ok then break end
             local topic = picked.value:topic()
-            if topic == desktop.REPLY_TOPIC then answered = "да" break end
+            if topic == desktop.REPLY_TOPIC then answered = "yes" break end
             eaten[#eaten + 1] = topic
         end
     else
         local answer, err = desktop.ask("desktop.list", {})
-        answered = answer and tostring(answer.marker) or ("ошибка: " .. tostring(err))
+        answered = answer and tostring(answer.marker) or ("error: " .. tostring(err))
     end
 
     local sent, serr = process.send(tostring(desktop.service()), "probe.result", {

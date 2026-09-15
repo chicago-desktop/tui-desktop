@@ -1,9 +1,10 @@
--- Вид окна: чистая библиотека без рантайма и без прав.
+-- The window's view: a pure library with no runtime and no permissions.
 --
--- Композитор её не зовёт и звать не может — ни растра создать (модуль gfx
--- механике не объявлен), ни библиотеку загрузить по имени из реестра. Зовёт
--- тема, которая её импортирует. Здесь она существует ради того, чтобы ссылка
--- в записи окна вела в живую запись: мёртвая молчала бы до первого открытия.
+-- The compositor does not call it and cannot — it can neither create a raster
+-- (the gfx module is not declared to the mechanics) nor load a library by name
+-- from the registry. The theme that imports it calls it. It exists here so that
+-- the reference in the window's entry leads to a live entry: a dead one would
+-- stay silent until the first open.
 local render = {}
 
 function render.draw(state: any)

@@ -1,11 +1,12 @@
--- Окно с настоящей программой.
+-- A window with a real program.
 --
--- Процесс получает обычный tty-порт — на деле viewport композитора — и
--- отдаёт его программе под PTY. Он не знает ни своего положения на экране,
--- ни того, что поверх него лежат другие окна; в этом весь смысл границы.
+-- The process gets an ordinary tty port — in fact the compositor's viewport —
+-- and hands it to the program under a PTY. It knows neither its position on
+-- the screen nor that other windows lie over it; that is the whole point of
+-- the boundary.
 --
--- Своей поверхности здесь нет и быть не может: attach_terminal() забирает
--- аренду порта себе, а аренда одна на порт.
+-- There is no surface of its own here and there cannot be: attach_terminal()
+-- takes the port's lease for itself, and there is one lease per port.
 
 local channel = require("channel")
 local exec = require("exec")
@@ -17,16 +18,16 @@ local EXECUTOR = "windows.tui_desktop:exec"
 local DEFAULT_COMMAND = "/bin/bash -i"
 
 local function main(command)
-    -- Подписка до старта: start() эмитит первое событие, и подписчик должен
-    -- уже существовать.
+    -- Subscribe before the start: start() emits the first event, and the
+    -- subscriber must already exist.
     local events = assert(tty.events())
     assert(tty.start())
 
     local executor = assert(exec.get(EXECUTOR))
 
-    -- Размер PTY не задаём: attach_terminal читает screen_size() порта, то
-    -- есть внутренний размер окна. Дальше его двигают события resize,
-    -- которые композитор шлёт при перетаскивании края.
+    -- The PTY size is not set: attach_terminal reads the port's screen_size(),
+    -- that is, the window's inner size. After that it is changed by resize
+    -- events that the compositor sends when an edge is dragged.
     local proc, perr = executor:exec(
         type(command) == "string" and command ~= "" and command or DEFAULT_COMMAND,
         {pty = {term = "xterm-256color"}})
@@ -35,8 +36,8 @@ local function main(command)
         error("the window could not start the program: " .. tostring(perr))
     end
 
-    -- attach_terminal ПОГЛОЩАЕТ proc: дальше владелец жизненного цикла —
-    -- сессия, а исходной ручкой пользоваться нельзя.
+    -- attach_terminal CONSUMES proc: from here on the lifecycle owner is the
+    -- session, and the original handle must not be used.
     local session, serr = proc:attach_terminal()
     if not session then
         executor:release()
@@ -53,11 +54,11 @@ local function main(command)
         if not selected.ok or selected.channel == done then break end
 
         local event = selected.value
-        -- `close` присылает композитор; настоящий терминал такого не эмитит.
+        -- `close` is sent by the compositor; a real terminal does not emit it.
         if event.type == "close" then break end
 
-        -- Голым `return session:send(event)` этот вызов писать нельзя:
-        -- хвостовой вызов yield-функции в go-lua v1.5.18 не выполняется.
+        -- This call must not be written as a bare `return session:send(event)`:
+        -- a tail call of a yield function in go-lua v1.5.18 is not executed.
         assert(session:send(event))
     end
 

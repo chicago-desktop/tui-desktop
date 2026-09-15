@@ -7,7 +7,7 @@ entries:
     kind: function.lua
     meta:
       type: migration
-      comment: Таблица окон, собранных в рантайме; из неё загрузчик поднимает их обратно после перезапуска.
+      comment: The table of windows built in the runtime; the loader brings them back from it after a restart.
       target_db: app:db
       timestamp: "2026-09-07T16:00:00Z"
     source: file://01_create_windows.lua
@@ -20,7 +20,7 @@ entries:
     kind: function.lua
     meta:
       type: migration
-      comment: Папка меню у окна из мастерской — колонка menu_group; пусто означает «не названа».
+      comment: The menu folder of a workshop window — the menu_group column; empty means "not named".
       target_db: app:db
       timestamp: "2026-09-08T12:00:00Z"
     source: file://02_window_group.lua
@@ -33,7 +33,7 @@ entries:
     kind: function.lua
     meta:
       type: migration
-      comment: Описание окна из мастерской сверх кода — импорты, значок, тип окна, пиксельный вид; колонка spec, JSON, '{}' означает «ничего не объявлено».
+      comment: The workshop window's description beyond the code — imports, icon, window type, pixel view; the spec column, JSON, '{}' means "nothing declared".
       target_db: app:db
       timestamp: "2026-09-09T09:00:00Z"
     source: file://03_window_spec.lua

@@ -1,9 +1,9 @@
--- Поставщик состояния для окна-вида.
+-- State provider for a view window.
 --
--- Ровно тот процесс, ради которого §4б и разделила два имени: данные добывает
--- он, под своим актором, а вид их только рисует. Здесь он ничего не добывает —
--- проверяется не добыча, а путь: композитор дал имя и номер окна, поставщик
--- толкает состояние сам, а ввод приезжает ему же.
+-- Exactly the process §4b separated the two names for: it obtains the data,
+-- under its own actor, and the view only draws them. Here it obtains nothing —
+-- what is checked is not the obtaining but the path: the compositor gave the name and
+-- the window number, the provider pushes the state itself, and input arrives to it too.
 local channel = require("channel")
 local process = require("process")
 local time = require("time")
@@ -38,12 +38,12 @@ local function main(desktop, window_id)
         local body = body_of(message)
 
         if topic == "probe.push" then
-            -- Состояние толкает поставщик, а не спрашивает композитор: он
-            -- один знает, когда данные изменились.
+            -- The provider pushes the state, the compositor does not ask for it:
+            -- only the provider knows when the data changed.
             pushed = pushed + 1
             process.send(tostring(desktop), "desktop.state", {
                 id = tostring(window_id),
-                state = {title = "готово", tick = pushed},
+                state = {title = "ready", tick = pushed},
             })
         elseif topic == "window.input" then
             local event: any = body.event or {}

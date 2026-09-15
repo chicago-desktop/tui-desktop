@@ -1,31 +1,33 @@
--- Что запись реестра говорит о своей программе.
+-- What a registry entry says about its program.
 --
--- Одно место, где `meta` окна превращается в поля, которыми пользуются
--- механика и тема: тип окна, признак «показывать в меню», размер и заголовок.
--- Разойдись эти чтения по местам вызова — умолчание однажды посчиталось бы
--- по-разному в меню и при открытии, и одно и то же окно выглядело бы
--- диалогом из «Пуска» и обычным окном с рабочего стола.
+-- The one place where a window's `meta` turns into the fields the mechanics
+-- and the theme use: the window type, the "show in the menu" flag, the size
+-- and the title. Were these reads scattered across the call sites, a default
+-- would one day be computed differently in the menu and on opening, and the
+-- same window would look like a dialog from "Start" and like an ordinary
+-- window from the desktop.
 --
--- Чистые таблицы: ни одного вызова в рантайм, поэтому проверяется прямо.
+-- Pure tables: not a single call into the runtime, so it is tested directly.
 
 local programs = {}
 
--- Пометка, по которой композитор находит окна приложения в реестре.
+-- The mark by which the compositor finds the application's windows in the registry.
 programs.WINDOW_META_TYPE = "tui_desktop.window"
 
--- Тип окна выбирает теме состав кнопок заголовка. Значения объявлены
--- списком, а не выведены из вида записи: вид принадлежит реестру, тип —
--- оболочке.
+-- The window type chooses the set of title bar buttons for the theme. The
+-- values are declared as a list, not derived from the entry's kind: the kind
+-- belongs to the registry, the type to the shell.
 programs.DEFAULT_TYPE = "app"
 programs.TYPES = {app = true, dialog = true, tool = true}
 
--- Чем рисуется содержимое окна. Объявляет ЗАПИСЬ, а не вывод из того, кто
--- написал программу внутри: вывод следующий читатель сделает иначе.
+-- What draws the window's content. The ENTRY declares it, rather than it being
+-- inferred from who wrote the program inside: the next reader would infer it
+-- differently.
 --
--- Умолчание — `cells`, и это не вкус. Чужая программа (bash, htop) умеет
--- выдавать только ячейки; окно, чья запись про это поле молчит, обязано вести
--- себя как раньше. Ошибиться в сторону `cells` — потерять красоту; ошибиться в
--- сторону `pixels` — потерять bash.
+-- The default is `cells`, and this is not a matter of taste. A foreign program
+-- (bash, htop) can only output cells; a window whose entry says nothing about
+-- this field must behave as before. Erring towards `cells` loses beauty;
+-- erring towards `pixels` loses bash.
 programs.DEFAULT_CONTENT = "cells"
 programs.CONTENTS = {cells = true, pixels = true}
 
@@ -36,11 +38,11 @@ local function meta_of(record: any)
     return {}
 end
 
--- window_type(meta) -> тип, неизвестное значение или nil
+-- window_type(meta) -> type, unknown value or nil
 --
--- Неизвестный тип — это `app` и предупреждение, а не отказ показать
--- программу: запись объявлена кем-то другим, и опечатка в одном поле не
--- повод спрятать окно, которое в остальном исправно.
+-- An unknown type is `app` and a warning, not a refusal to show the program:
+-- the entry was declared by someone else, and a typo in one field is no reason
+-- to hide a window that is otherwise sound.
 function programs.window_type(meta: any)
     if type(meta) ~= "table" then return programs.DEFAULT_TYPE, nil end
     local given: any = meta.window_type
@@ -49,15 +51,15 @@ function programs.window_type(meta: any)
     return programs.DEFAULT_TYPE, given
 end
 
--- in_menu(meta) -> показывать ли программу в меню
+-- in_menu(meta) -> whether to show the program in the menu
 --
--- По умолчанию да: спрятанной должна быть та программа, которая об этом
--- попросила. Строка "false" считается отказом наравне с булевым: запись
--- приезжает и из YAML, и из JSON, и молчаливое «строка — это правда»
--- показало бы в меню ровно те окна, которые просили спрятать.
--- Читается полем, а не через `and … or`: у `false` эта конструкция даёт
--- ветку «значения нет», то есть ровно противоположный ответ — скрытая
--- программа оказалась бы в меню.
+-- Yes by default: the program to hide is the one that asked for it. The
+-- string "false" counts as a refusal on par with the boolean: an entry arrives
+-- both from YAML and from JSON, and a silent "a string is true" would show in
+-- the menu exactly the windows that asked to be hidden.
+-- Read as a field, not through `and … or`: for `false` that construct takes
+-- the "no value" branch, that is, exactly the opposite answer — a hidden
+-- program would end up in the menu.
 function programs.in_menu(meta: any)
     if type(meta) ~= "table" then return true end
     local given: any = meta.in_menu
@@ -66,10 +68,10 @@ function programs.in_menu(meta: any)
     return true
 end
 
--- content(meta) -> "cells" | "pixels", неизвестное значение или nil
+-- content(meta) -> "cells" | "pixels", unknown value or nil
 --
--- Неизвестное значение — это `cells` и предупреждение: окно, объявившее
--- опечатку, обязано открыться как обычное, а не пропасть.
+-- An unknown value is `cells` and a warning: a window that declared a typo
+-- must open as an ordinary one, not disappear.
 function programs.content(meta: any)
     if type(meta) ~= "table" then return programs.DEFAULT_CONTENT, nil end
     local given: any = meta.window_content
@@ -78,13 +80,14 @@ function programs.content(meta: any)
     return programs.DEFAULT_CONTENT, given
 end
 
--- resizable(meta) -> можно ли менять размер окна
+-- resizable(meta) -> whether the window's size can be changed
 --
--- По умолчанию да: окно с фиксированным размером — то, которое об этом
--- попросило. Калькулятор и диалог свойств в Windows 95 не тянутся за угол и
--- не разворачиваются: их раскладка посчитана под один размер, и растянутое
--- окно показало бы серое поле вокруг кнопок. Строка "false" считается
--- отказом наравне с булевым — запись приезжает и из YAML, и из JSON.
+-- Yes by default: a window with a fixed size is the one that asked for it. The
+-- Calculator and a properties dialog in Windows 95 do not stretch by the
+-- corner and do not maximize: their layout is computed for one size, and a
+-- stretched window would show a gray field around the buttons. The string
+-- "false" counts as a refusal on par with the boolean — an entry arrives both
+-- from YAML and from JSON.
 function programs.resizable(meta: any)
     if type(meta) ~= "table" then return true end
     local given: any = meta.resizable
@@ -100,9 +103,9 @@ local function reference(meta: any, field)
     return given
 end
 
--- item(record) -> пункт каталога или nil
+-- item(record) -> catalog item or nil
 --
--- nil означает «это не программа»: запись без идентификатора открыть нечем.
+-- nil means "this is not a program": an entry without an id has nothing to open it by.
 function programs.item(record: any)
     local entry: any = type(record) == "table" and record or {}
     local id = entry.id
@@ -118,32 +121,33 @@ function programs.item(record: any)
         h = tonumber(meta.height),
         window_type = window_type,
         in_menu = programs.in_menu(meta),
-        -- Чем рисуется содержимое и чем оно живёт. `render` — чистая
-        -- библиотека отрисовки, `state` — процесс-поставщик со своим актором:
-        -- рисование в композиторе, права снаружи.
+        -- What draws the content and what it lives on. `render` is a pure
+        -- drawing library, `state` is a provider process with its own actor:
+        -- drawing in the compositor, permissions outside.
         content = content,
         render = reference(meta, "render"),
         state = reference(meta, "state"),
         pixel_render = reference(meta, "pixel_render"),
         pixel_state = reference(meta, "pixel_state"),
         image = reference(meta, "image"),
-        -- Фиксированный размер объявляет запись, а не тот, кто открывает:
-        -- иначе один и тот же калькулятор тянулся бы из меню и не тянулся
-        -- бы с ярлыка.
+        -- The fixed size is declared by the entry, not by whoever opens it:
+        -- otherwise the same calculator would stretch when opened from the
+        -- menu and not stretch when opened from a shortcut.
         resizable = programs.resizable(meta),
-        -- Какие расширения программа открывает (`meta.opens: [txt, png]`).
-        -- Доезжает до пункта как есть: реестр типов собирает оболочка, и
-        -- пункт, потерявший это поле, оставил бы проводник без ассоциаций.
+        -- Which extensions the program opens (`meta.opens: [txt, png]`).
+        -- It reaches the item as is: the type registry is assembled by the
+        -- shell, and an item that lost this field would leave the explorer
+        -- without associations.
         opens = type(meta.opens) == "table" and meta.opens or nil,
     }, unknown or odd_content
 end
 
--- menu(records) -> пункты меню, предупреждения
+-- menu(records) -> menu items, warnings
 --
--- Пункты отсортированы по заголовку, скрытые отброшены. Предупреждения —
--- список {entry, window_type} с неизвестными типами: они не мешают показать
--- программу, но должны быть названы, иначе опечатка в объявлении живёт
--- вечно.
+-- Items are sorted by title, hidden ones are dropped. Warnings are a list of
+-- {entry, window_type} with unknown types: they do not prevent showing the
+-- program, but they must be named, otherwise a typo in a declaration lives
+-- forever.
 function programs.menu(records: any)
     local items, warnings = {}, {}
     for _, record in ipairs(type(records) == "table" and records or {}) do

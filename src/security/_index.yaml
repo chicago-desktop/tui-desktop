@@ -1,16 +1,17 @@
 version: "1.0"
 namespace: windows.tui_desktop.security
 
-# Права разделены на три, а не слиты в одну «всё можно»: композитору нужно
-# порождать процессы и запускать программы, командному каналу — только
-# найти композитор и заговорить с ним, а доступ к ручкам выдаёт приложение.
+# The permissions are split into three, not merged into one "anything goes":
+# the compositor needs to spawn processes and launch programs, the command
+# channel only to find the compositor and talk to it, and access to the
+# endpoints is granted by the application.
 
 entries:
   # windows.tui_desktop.security:desktop_runtime
   - name: desktop_runtime
     kind: security.policy
     meta:
-      comment: Права композитора и окон — порождать процессы с грантом на viewport, гасить их и запускать программы под PTY.
+      comment: Permissions of the compositor and the windows — spawn processes with a grant on the viewport, terminate them and launch programs under a PTY.
     policy:
       actions:
         - process.context
@@ -23,34 +24,36 @@ entries:
         - process.registry
         - process.registry.register
         - process.registry.unregister
-        # Окна порождаются под личностью вошедшего пользователя (options.logon
-        # у library.run): подменить актора и скоуп потомка — отдельное право,
-        # без него `with_actor` отказывает «custom security context».
+        # Windows are spawned under the identity of the logged-on user (options.logon
+        # of library.run): substituting a child's actor and scope is a separate permission;
+        # without it `with_actor` refuses with "custom security context".
         - process.security
         - exec.get
         - exec.run
-        # Каталог окон приложения читается из реестра по meta.type, а окна,
-        # собранные в рантайме, возвращаются в него на старте десктопа.
+        # The application's window catalog is read from the registry by meta.type, and windows
+        # built in the runtime are brought back into it at desktop start.
         - registry.get
         - registry.find
         - registry.entry
         - registry.apply
-        # Хранилище окон читается на старте десктопа; проверяется как
-        # `db.get` на идентификатор ресурса базы.
+        # The window storage is read at desktop start; it is checked as
+        # `db.get` on the database's resource id.
         - db.get
       resources: "*"
       effect: allow
 
   # windows.tui_desktop.security:storage_env
   #
-  # Одна переменная, а не «*»: имя базы, где лежат окна, приложение может
-  # переназначить. Право узкое нарочно — под этим же именем ходят токены, а
-  # `env.get` без права не отказывает громко: он возвращает nil, и `or "app:db"`
-  # рядом превращает отказ по правам в «человек ничего не переназначал».
+  # One variable, not "*": the application may reassign the name of the
+  # database where the windows are kept. The permission is narrow on purpose —
+  # the same `env.get` reads tokens under neighbouring names — and `env.get`
+  # without the permission does not refuse loudly: it returns nil, and
+  # `or "app:db"` next to it turns a permission refusal into "the person
+  # reassigned nothing".
   - name: storage_env
     kind: security.policy
     meta:
-      comment: Право прочитать имя базы окон из окружения. Одна переменная, а не всё окружение.
+      comment: Permission to read the window database's name from the environment. One variable, not the whole environment.
     policy:
       actions:
         - env.get
@@ -62,7 +65,7 @@ entries:
   - name: desktop_command_channel
     kind: security.policy
     meta:
-      comment: Права ручек командного канала — найти композитор по имени и послать ему команду. Ни порождения процессов, ни запуска программ здесь нет намеренно.
+      comment: Permissions of the command channel endpoints — find the compositor by name and send it a command. Spawning processes and launching programs are deliberately absent here.
     policy:
       actions:
         - process.context
@@ -75,7 +78,7 @@ entries:
   - name: desktop_endpoint_access
     kind: security.policy
     meta:
-      comment: Аутентифицированные пользователи приложения могут обращаться к ручкам десктопа.
+      comment: Authenticated users of the application may call the desktop endpoints.
     groups: []
     policy:
       resources:
@@ -87,21 +90,21 @@ entries:
   - name: user_security_scope
     kind: ns.requirement
     meta:
-      comment: Группа безопасности приложения, которой открыт доступ к ручкам десктопа.
+      comment: The application's security group that is given access to the desktop endpoints.
     targets:
       - entry: windows.tui_desktop.security:desktop_endpoint_access
         path: ".groups +="
 
   # windows.tui_desktop.security:workshop_scope
   #
-  # Мастерская и загрузчик: прочитать реестр, применить к нему версию,
-  # прочитать и записать строку хранилища. Права порождать процессы и
-  # запускать программы сюда не входят — окна открывает композитор, у
-  # которого они есть.
+  # The workshop and the loader: read the registry, apply a version to it,
+  # read and write a storage row. Permissions to spawn processes and
+  # launch programs are not included — windows are opened by the compositor,
+  # which has them.
   - name: workshop_scope
     kind: security.policy
     meta:
-      comment: Права мастерской и загрузчика окон, собранных в рантайме.
+      comment: Permissions of the workshop and the loader of windows built in the runtime.
     policy:
       actions:
         - process.context
@@ -114,25 +117,25 @@ entries:
 
   # windows.tui_desktop.security:app_window_scope
   #
-  # Окно, собранное в рантайме. Оно рисует себя и читает данные, но не
-  # порождает процессов, не запускает программ и не меняет реестр: код окна
-  # приходит по HTTP, и права выданы ровно под рисование и чтение.
+  # A window built in the runtime. It draws itself and reads data, but does not
+  # spawn processes, launch programs or change the registry: the window's code
+  # arrives over HTTP, and the permissions are granted exactly for drawing and reading.
   #
-  # `db.get` здесь потому, что `sql` есть в белом списке модулей окна: без
-  # этого права виджет с данными применился бы, попал в меню и упал при
-  # первом открытии — то есть отказ пришёл бы позже всего, когда его труднее
-  # всего связать с причиной.
+  # `db.get` is here because `sql` is in the window's module whitelist: without
+  # this permission a data widget would be applied, get into the menu and crash
+  # on the first open — that is, the refusal would come as late as possible, when
+  # it is hardest to tie to the cause.
   - name: app_window_scope
     kind: security.policy
     meta:
-      comment: Права окна, собранного в рантайме.
+      comment: Permissions of a window built in the runtime.
     policy:
       actions:
         - process.context
         - db.get
-        # Окно просит композитор открыть соседнее окно — тем же путём, что и
-        # командный канал снаружи. Порождать процессы и запускать программы
-        # оно по-прежнему не может: этих прав здесь нет.
+        # A window asks the compositor to open a neighbouring window — by the same path as
+        # the command channel from outside. It still cannot spawn processes or launch
+        # programs: those permissions are not here.
         - process.send
         - process.registry
       resources: "*"

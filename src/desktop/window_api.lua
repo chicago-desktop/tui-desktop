@@ -1,37 +1,40 @@
--- Что окно может попросить у десктопа.
+-- What a window can ask of the desktop.
 --
--- Окно рисует себя и получает ввод, но соседями не распоряжается: чтобы
--- открыть, закрыть или поднять окно, оно просит об этом композитор — тот же
--- путь, которым ходит командный канал снаружи. Своего доступа к процессам и
--- программам у окна нет.
+-- A window draws itself and receives input, but does not command its
+-- neighbours: to open, close or raise a window, it asks the compositor — the
+-- same path the command channel takes from outside. The window has no access
+-- of its own to processes and programs.
 --
--- Библиотека существует, чтобы каждый виджет не переписывал протокол
--- сообщений заново: разойдись эти реализации, и половина окон однажды начала
--- бы слать команды, которых композитор уже не понимает.
+-- The library exists so that each widget does not rewrite the message
+-- protocol anew: were these implementations to diverge, half of the windows
+-- would one day start sending commands the compositor no longer understands.
 
 local process = require("process")
 local channel = require("channel")
 local time = require("time")
 
--- Лог здесь не роскошь: `open` ответа не ждёт намеренно, и окно, которое не
--- проверило второе возвращаемое значение, иначе не расскажет об отказе никак.
--- Терминальный хост уводит лог в события, поэтому кадр он не разъезжает.
+-- The log here is not a luxury: `open` does not wait for a reply on purpose,
+-- and a window that did not check the second return value would otherwise not
+-- report a refusal at all. The terminal host routes the log into events, so
+-- it does not scramble the frame.
 local logger = require("logger")
 local log = logger:named("tui_desktop.window")
 
--- Имя композитора приезжает в контексте процесса: композитор кладёт его туда,
--- когда запускает окно. Ключ один на обе стороны — механика композитора
--- берёт его отсюда же, чтобы имя ключа не разошлось молча.
+-- The compositor's name arrives in the process context: the compositor puts it
+-- there when it starts the window. One key for both sides — the compositor's
+-- mechanics take it from here too, so that the key's name cannot silently
+-- diverge.
 local CONTEXT_KEY = "tui_desktop.service"
 
--- Запасное имя — штатная оболочка. Окно, запущенное старым композитором или
--- чужим запуском, ведёт себя как раньше, а не падает.
+-- The fallback name is the standard shell. A window started by an old
+-- compositor or by someone else's launch behaves as before instead of crashing.
 local DEFAULT_SERVICE = "windows.tui_desktop.desktop"
 
--- Модуль объявляет ЭТА библиотека, а не запись окна: библиотека получает свои
--- модули, поэтому окно, написанное до появления имени в контексте, работает
--- без единой правки. `require` недоступного модуля бросает, а окно не должно
--- умирать на первой строке из-за диагностики — отсюда pcall.
+-- The module is declared by THIS library, not by the window's entry: a library
+-- gets its own modules, so a window written before the name appeared in the
+-- context works without a single edit. `require` of an unavailable module
+-- throws, and a window must not die on its first line because of diagnostics —
+-- hence pcall.
 local has_ctx, ctx = pcall(require, "ctx")
 
 local input = require("input")
@@ -74,18 +77,20 @@ function api.desktops(name: string): any
     return found
 end
 
--- Топик, на котором композитор отвечает. Одна константа на обе стороны:
--- механика берёт её отсюда же.
+-- The topic the compositor replies on. One constant for both sides: the
+-- mechanics take it from here too.
 api.REPLY_TOPIC = "desktop.reply"
 
--- Сколько ждать ответа. Ожидание обязано кончаться: окно, которое ждёт вечно,
--- не рисуется и не принимает ввод, и снаружи это «зависло», а не «ждёт».
+-- How long to wait for a reply. The wait must end: a window that waits forever
+-- neither draws nor accepts input, and from outside that is "hung", not
+-- "waiting".
 api.BUDGET = "5s"
 
--- service() -> имя композитора, откуда оно взято ("context" | "default")
+-- service() -> the compositor's name, where it was taken from ("context" | "default")
 --
--- Окну это знать незачем — оно зовёт open/close/focus. Наружу отдано ради
--- проверок и диагностики: «к кому обращается это окно» иначе не спросить.
+-- A window has no need to know this — it calls open/close/focus. It is exposed
+-- for tests and diagnostics: "whom does this window address" cannot be asked
+-- otherwise.
 function api.service()
     if has_ctx and type(ctx) == "table" then
         local name = ctx.get(CONTEXT_KEY)
@@ -94,10 +99,10 @@ function api.service()
     return DEFAULT_SERVICE, "default"
 end
 
--- Почему композитора не нашли. Отказ обязан назвать и имя, и то, откуда оно
--- взялось: молчание здесь и было исходным дефектом — под второй оболочкой
--- окно обращалось к несуществующему процессу, а `api.open` ответа не ждёт,
--- так что «успех» выглядел неотличимо от настоящего открытия.
+-- Why the compositor was not found. The refusal must name both the name and
+-- where it came from: silence here was the original defect — under the second
+-- shell the window addressed a nonexistent process, and `api.open` does not
+-- wait for a reply, so the "success" looked indistinguishable from a real open.
 local function unreachable(name, source, lerr)
     local reason = "desktop \"" .. name .. "\" does not answer (" .. tostring(lerr) .. ")"
     if source ~= "default" then return reason end
@@ -109,9 +114,9 @@ local function unreachable(name, source, lerr)
         .. "so the fallback was taken"
 end
 
--- `service` — имя композитора, названное вызывающим. Нужно тому, у кого нет
--- контекста окна: сервис приложения, кладущий пункт в трей, композитором не
--- запускался и ключа в контексте не получил.
+-- `service` — the compositor's name given by the caller. Needed by whoever has
+-- no window context: an application service that puts an item into the tray
+-- was not started by the compositor and got no key in its context.
 local function call(topic, body, service: string?)
     local name, source = api.service()
     if type(service) == "string" and service ~= "" then name, source = service, "argument" end
@@ -129,8 +134,9 @@ local function call(topic, body, service: string?)
     return true, nil
 end
 
--- Ответ приезжает обёрнутым: payload — userdata, внутри бывает ещё и массив
--- из одного элемента. Поле, прочитанное напрямую, окажется nil без ошибки.
+-- The reply arrives wrapped: the payload is userdata, and inside there is
+-- sometimes also a one-element array. A field read directly comes out nil
+-- without an error.
 local function unwrap(value)
     if type(value) == "userdata" then
         local ok, decoded = pcall(function() return value:data() end)
@@ -142,43 +148,45 @@ local function unwrap(value)
     return value
 end
 
--- Канал ответов. Отдельная подписка на топик, а НЕ чтение общего inbox, и это
--- главное решение здесь.
+-- The reply channel. A separate subscription to the topic, NOT reading the
+-- shared inbox, and this is the main decision here.
 --
--- Цикл, который ждёт ответ в inbox, забирает оттуда всё подряд и выбрасывает
--- чужое — измерено: команда `desktop.close`, посланная окну, пока оно ждало,
--- исчезала без следа, и снаружи это выглядело как окно, переставшее слушаться
--- мышь. Рантайм при этом ничего не терял сам: сообщение, которому некому
--- отдаться, ждёт в очереди процесса. Значит достаточно не забирать его —
--- ответ приходит своим каналом, чужая команда остаётся в inbox и дожидается
--- цикла окна.
+-- A loop that waits for a reply in the inbox takes everything from there and
+-- throws away what is not its own — measured: a `desktop.close` command sent
+-- to a window while it was waiting vanished without a trace, and from outside
+-- it looked like a window that stopped obeying the mouse. The runtime itself
+-- lost nothing: a message with no one to be delivered to waits in the
+-- process's queue. So it is enough not to take it — the reply arrives on its
+-- own channel, the foreign command stays in the inbox and waits for the
+-- window's loop.
 local replies: any = nil
 
 local function reply_channel()
     if replies then return replies, nil end
-    -- Подписка создаётся ДО отправки вопроса: созданная после, она пропустила
-    -- бы быстрый ответ в inbox, где его съел бы чужой цикл.
+    -- The subscription is created BEFORE the question is sent: created after,
+    -- it would miss a quick reply in the inbox, where a foreign loop would eat it.
     local opened = process.listen(api.REPLY_TOPIC, {message = true})
     if not opened then return nil, "the window could not subscribe to the desktop's replies" end
     replies = opened
     return replies, nil
 end
 
--- replies() -> канал ответов десктопа
+-- replies() -> the desktop's reply channel
 --
--- Для окна со своим циклом это лучше, чем `ask`: оно кладёт канал в свой
--- `channel.select` рядом с событиями и inbox и не перестаёт рисоваться,
--- пока ждёт. `ask` удобнее, но на время ожидания окно не читает ни ввод, ни
--- команды — они дождутся его (проверено), но кадр в это время стоит.
+-- For a window with its own loop this is better than `ask`: it puts the channel
+-- into its `channel.select` beside the events and the inbox and keeps drawing
+-- while it waits. `ask` is more convenient, but while waiting the window reads
+-- neither input nor commands — they will wait for it (verified), but the frame
+-- stands still meanwhile.
 function api.replies()
     local opened, err = reply_channel()
     return opened, err
 end
 
--- Ответ, оставшийся от прошлого вопроса, или отказ, приехавший сам. Выбрасывается перед
--- новым вопросом: его никто не ждёт, а прочитанный как свежий он ответил бы на
--- прошлый вопрос вместо нынешнего. Выбросить ответ безопасно — в отличие от
--- команды, ради которой всё это и сделано.
+-- A reply left over from a previous question, or a refusal that arrived on its
+-- own. It is dropped before a new question: nobody waits for it, and read as
+-- fresh it would answer the previous question instead of the current one.
+-- Dropping a reply is safe — unlike a command, for whose sake all this was done.
 local function drop_stale(ch)
     local dropped = 0
     while true do
@@ -189,10 +197,10 @@ local function drop_stale(ch)
     return dropped
 end
 
--- request(topic, body) -> true | nil, причина
+-- request(topic, body) -> true | nil, reason
 --
--- Задать вопрос и не ждать: ответ приедет в `api.replies()`. Ровно это нужно
--- окну, которое рисует себя и не имеет права замирать.
+-- Ask a question and do not wait: the reply arrives in `api.replies()`. Exactly
+-- what a window needs that draws itself and has no right to freeze.
 function api.request(topic, body)
     local name, source = api.service()
     local pid, lerr = process.registry.lookup(name)
@@ -216,9 +224,9 @@ function api.request(topic, body)
     return true, nil
 end
 
--- ask(topic, body, opts) -> ответ | nil, причина
+-- ask(topic, body, opts) -> reply | nil, reason
 --
--- opts.timeout — срок ожидания (по умолчанию api.BUDGET).
+-- opts.timeout — how long to wait (api.BUDGET by default).
 function api.ask(topic, body, opts)
     local options: any = type(opts) == "table" and opts or {}
     local budget = type(options.timeout) == "string" and options.timeout ~= ""
@@ -249,10 +257,10 @@ function api.ask(topic, body, opts)
 
         local answer = unwrap(picked.value:payload())
         if answer.unsolicited then
-            -- Отказ на команду, которой не ждали ответа: он приехал сам и
-            -- ответом на ЭТОТ вопрос не является. Принять его за ответ значит
-            -- соврать про другую команду — поэтому он только называется в
-            -- логе, а ожидание продолжается.
+            -- A refusal of a command whose reply nobody awaited: it arrived on
+            -- its own and is not the reply to THIS question. Taking it for the
+            -- reply would mean lying about another command — so it is only
+            -- named in the log, and the wait goes on.
             log:warn("the desktop refused a command sent without waiting",
                 {command = tostring(answer.command), error = tostring(answer.error)})
         elseif type(answer.command) == "string" and answer.command ~= topic then
@@ -266,7 +274,7 @@ function api.ask(topic, body, opts)
     end
 end
 
--- list(opts) -> {windows, focused, screen, restore} | nil, причина
+-- list(opts) -> {windows, focused, screen, restore} | nil, reason
 function api.list(opts)
     local answer, err = api.ask("desktop.list", {}, opts)
     return answer, err
@@ -274,32 +282,33 @@ end
 
 -- open{entry=…, title=…, args=…, x=…, y=…, w=…, h=…}
 --
--- Ответа не ждём намеренно: окно рисует себя, и ожидание чужого ответа
--- заморозило бы кадр. Что окно открылось, видно на экране; что композитора не
--- нашли — видно во втором возвращаемом значении, и его стоит проверять.
+-- We do not wait for a reply on purpose: the window draws itself, and waiting
+-- for someone else's reply would freeze the frame. That the window opened is
+-- visible on screen; that the compositor was not found is visible in the second
+-- return value, and it is worth checking.
 function api.open(spec)
     spec = type(spec) == "table" and spec or {}
     return call("desktop.open", spec)
 end
 
--- open_wait(spec, opts) -> описание открытого окна | nil, причина
+-- open_wait(spec, opts) -> description of the opened window | nil, reason
 --
--- То же, что `open`, но с ответом: в описании есть `id`, а без него окно не
--- может ни закрыть открытое, ни поднять его. Кадр на время ожидания стоит —
--- поэтому по умолчанию `open` остаётся тем, чем был.
+-- The same as `open`, but with a reply: the description has `id`, and without
+-- it a window can neither close what it opened nor raise it. The frame stands
+-- still while waiting — so by default `open` stays what it was.
 function api.open_wait(spec, opts)
     local answer, err = api.ask("desktop.open", type(spec) == "table" and spec or {}, opts)
     if not answer then return nil, err end
     return answer.window, nil
 end
 
--- dialog(spec, opts) -> описание диалога | nil, причина
+-- dialog(spec, opts) -> description of the dialog | nil, reason
 --
--- Диалог принадлежит окну, которое его открыло: композитор узнаёт родителя по
--- отправителю, ставит диалог по центру своего окна, держит поверх него и
--- закрывает вместе с ним. Модальности нет намеренно: блокировать ввод
--- остальных окон там, где окно — чужой процесс, значит уметь подвесить весь
--- стол.
+-- A dialog belongs to the window that opened it: the compositor learns the
+-- parent from the sender, centers the dialog on its window, keeps it above it
+-- and closes it together with it. There is no modality on purpose: blocking
+-- the input of the other windows where a window is someone else's process
+-- means being able to hang the whole desktop.
 function api.dialog(spec, opts)
     local body: any = type(spec) == "table" and spec or {}
     body.window_type = "dialog"
@@ -308,10 +317,11 @@ function api.dialog(spec, opts)
     return answer.window, nil
 end
 
--- Отказ на команду без ожидания приезжает сюда же, помеченный `unsolicited`:
--- окно, которое держит канал в своём `select`, узнаёт, что `close` или `focus`
--- не выполнились, и не морозит себя ради этого. Окну, которое канал не
--- создавало, отказ приходит обычным сообщением в inbox.
+-- A refusal of a command sent without waiting arrives here too, marked
+-- `unsolicited`: a window that keeps the channel in its `select` learns that
+-- `close` or `focus` did not happen, and does not freeze itself for it. To a
+-- window that did not create the channel, the refusal comes as an ordinary
+-- message in the inbox.
 -- A close is a request the window may refuse; `opts.force = true` kills it
 -- after the grace instead (the compositor's shutdown path). `opts.refused =
 -- true` is the window's own answer to a request: it stays, and the request is
@@ -342,14 +352,15 @@ end
 -- tray{key=…, text=…, entry=…, title=…, ttl=…} [, service]
 -- tray{key=…, remove=true} [, service]
 --
--- Пункт области уведомлений у часов панели задач. Ключ выбирает поставщик:
--- тот же ключ обновляет пункт. `entry` — окно, которое откроет щелчок по
--- пункту (или поднимет уже открытое). `ttl` в секундах: пункт, который не
--- обновили за этот срок, композитор снимает сам — подпись, пережившая своего
--- поставщика, выдавала бы старое значение за нынешнее.
+-- An item of the notification area by the taskbar clock. The key is chosen by
+-- the provider: the same key updates the item. `entry` — the window a click on
+-- the item opens (or raises if it is already open). `ttl` in seconds: an item
+-- not updated within this time is removed by the compositor itself — a label
+-- that outlived its provider would pass an old value off as the current one.
 --
--- Ответа не ждёт, как `open`: отказ (нет ключа, трей полон) приезжает сам в
--- `api.replies()` с пометкой `unsolicited`, а без канала — в inbox.
+-- Does not wait for a reply, like `open`: a refusal (no key, tray full) arrives
+-- on its own in `api.replies()` marked `unsolicited`, and without the channel —
+-- in the inbox.
 function api.tray(spec, service: string?)
     local ok, err = call("desktop.tray", type(spec) == "table" and spec or {}, service)
     return ok, err

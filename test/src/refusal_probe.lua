@@ -1,9 +1,9 @@
--- Окно, которое шлёт заведомо промахивающуюся команду и слушает канал ответов.
+-- A window that sends a command known to miss and listens on the reply channel.
 --
--- Порядок команд здесь и есть контроль: между промахом и вопросом стоит
--- ИСПРАВНАЯ команда. Если бы композитор слал что-нибудь и на неё, вторым
--- сообщением приехало бы оно, а не ответ на вопрос — и ждать для этого не
--- надо, сообщения приходят по порядку.
+-- The order of the commands is the control here: between the miss and the question
+-- stands a VALID command. If the compositor sent something in reply to it too, that
+-- would arrive as the second message instead of the answer to the question — and no
+-- waiting is needed for this, messages arrive in order.
 local channel = require("channel")
 local process = require("process")
 local time = require("time")
@@ -20,12 +20,12 @@ local function body_of(message: any)
 end
 
 local function main(watcher)
-    -- Канал ответов создаётся ПЕРВЫМ: отказ на команду, посланную до подписки,
-    -- уехал бы в inbox — тоже не потеря, но не сюда.
+    -- The reply channel is created FIRST: a refusal of a command sent before the
+    -- subscription would go to the inbox — not a loss either, but not here.
     local replies = desktop.replies()
 
     desktop.focus("w404")
-    desktop.open({entry = "app:idle_window", title = "Живое", w = 20, h = 6})
+    desktop.open({entry = "app:idle_window", title = "Alive", w = 20, h = 6})
     desktop.request("desktop.list", {})
 
     local got = {}

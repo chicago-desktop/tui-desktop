@@ -1,17 +1,17 @@
--- Оболочка по умолчанию: композитор со штатной темой.
+-- The default shell: the compositor with the standard theme.
 --
--- Вся механика — в `library`; здесь только выбор вида и имени, под которым
--- десктоп виден процессам. Вторая оболочка (другой модуль) зовёт ту же
--- библиотеку со своей темой и своим именем, не копируя ни хостинг окон, ни
--- PTY, ни командный канал.
+-- All the mechanics are in `library`; here is only the choice of the look and
+-- of the name under which the desktop is visible to processes. A second shell
+-- (another module) calls the same library with its own theme and its own
+-- name, without copying window hosting, the PTY, or the command channel.
 
 local library = require("library")
 local chrome = require("chrome")
 
 local function main()
-    -- Голым `return library.run(...)` это писать нельзя: в go-lua v1.5.18
-    -- хвостовой вызов yield-функции из базового фрейма корутины не
-    -- выполняется вовсе — молча, за 0 мс.
+    -- This must not be written as a bare `return library.run(...)`: in go-lua
+    -- v1.5.18 a tail call of a yield function from a coroutine's base frame is
+    -- not executed at all — silently, in 0 ms.
     local ok, err = library.run({
         chrome = chrome,
         service_name = "windows.tui_desktop.desktop",

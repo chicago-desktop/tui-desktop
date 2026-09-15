@@ -1,19 +1,19 @@
 version: "1.0"
 namespace: windows.tui_desktop.api
 
-# Командный канал: тем же десктопом, за которым сидит человек, управляет
-# агент снаружи. Обе стороны работают одновременно — композитор один, и он
-# сам сериализует ввод с клавиатуры и команды из inbox.
+# The command channel: the same desktop a person sits at is driven by an
+# agent from outside. Both sides work at once — there is one compositor, and
+# it serializes keyboard input and commands from the inbox itself.
 #
-# Рядом — мастерская: окно можно собрать прямо в работающем рантайме и
-# сохранить, чтобы оно пережило перезапуск.
+# Next to it is the workshop: a window can be built right in the running
+# runtime and saved so that it survives a restart.
 
 entries:
   # windows.tui_desktop.api:control
   - name: control
     kind: library.lua
     meta:
-      comment: Найти композитор по имени, послать команду, дождаться ответа.
+      comment: Find the compositor by name, send a command, wait for the reply.
     source: file://control.lua
     modules:
       - channel
@@ -26,7 +26,7 @@ entries:
   - name: list_windows
     kind: function.lua
     meta:
-      comment: GET /tui-desktop/windows — открытые окна, фокус и размер экрана.
+      comment: GET /tui-desktop/windows — open windows, focus and screen size.
     source: file://list_windows.lua
     method: handler
     modules:
@@ -40,7 +40,7 @@ entries:
   - name: list_windows.endpoint
     kind: http.endpoint
     meta:
-      comment: Список окон за аутентифицированным роутером.
+      comment: The window list behind the authenticated router.
       router: app:api
     method: GET
     func: list_windows
@@ -50,7 +50,7 @@ entries:
   - name: open_window
     kind: function.lua
     meta:
-      comment: POST /tui-desktop/windows — открыть окно с программой.
+      comment: POST /tui-desktop/windows — open a window with a program.
     source: file://open_window.lua
     method: handler
     modules:
@@ -65,7 +65,7 @@ entries:
   - name: open_window.endpoint
     kind: http.endpoint
     meta:
-      comment: Открытие окна за аутентифицированным роутером.
+      comment: Opening a window behind the authenticated router.
       router: app:api
     method: POST
     func: open_window
@@ -75,7 +75,7 @@ entries:
   - name: window_action
     kind: function.lua
     meta:
-      comment: POST /tui-desktop/windows/{id}/{action} — действие над одним окном, включая чтение его экрана.
+      comment: POST /tui-desktop/windows/{id}/{action} — an action on one window, including reading its screen.
     source: file://window_action.lua
     method: handler
     modules:
@@ -90,23 +90,23 @@ entries:
   - name: window_action.endpoint
     kind: http.endpoint
     meta:
-      comment: Действие над окном за аутентифицированным роутером.
+      comment: An action on a window behind the authenticated router.
       router: app:api
     method: POST
     func: window_action
     path: /tui-desktop/windows/{id}/{action}
 
-  # ─── Мастерская: окна, собранные в рантайме ──────────────────────────
+  # ─── Workshop: windows built in the runtime ──────────────────────────
   #
-  # Реестр меняется на живую, поэтому окно не обязано быть файлом. Ручки
-  # ниже принимают код будущего окна, поэтому живут за аутентифицированным
-  # роутером и за собственной политикой.
+  # The registry changes live, so a window does not have to be a file. The
+  # endpoints below accept the code of a future window, so they live behind
+  # the authenticated router and behind their own policy.
 
   # windows.tui_desktop.api:create_app
   - name: create_app
     kind: function.lua
     meta:
-      comment: POST /tui-desktop/apps — собрать окно в реестре и сохранить его исходник.
+      comment: POST /tui-desktop/apps — build a window in the registry and save its source.
     source: file://create_app.lua
     method: handler
     modules:
@@ -122,13 +122,13 @@ entries:
     security:
       policies:
         - windows.tui_desktop.security:workshop_scope
-        # То же, что у композитора: хранилище читает имя базы из окружения.
+        # Same as the compositor's: the storage reads the database name from the environment.
         - windows.tui_desktop.security:storage_env
 
   - name: create_app.endpoint
     kind: http.endpoint
     meta:
-      comment: Мастерская за аутентифицированным роутером.
+      comment: The workshop behind the authenticated router.
       router: app:api
     method: POST
     func: create_app
@@ -138,7 +138,7 @@ entries:
   - name: list_apps
     kind: function.lua
     meta:
-      comment: GET /tui-desktop/apps — сохранённые окна и признак того, живы ли они в реестре.
+      comment: GET /tui-desktop/apps — saved windows and whether they are live in the registry.
     source: file://list_apps.lua
     method: handler
     modules:
@@ -154,13 +154,13 @@ entries:
     security:
       policies:
         - windows.tui_desktop.security:workshop_scope
-        # То же, что у композитора: хранилище читает имя базы из окружения.
+        # Same as the compositor's: the storage reads the database name from the environment.
         - windows.tui_desktop.security:storage_env
 
   - name: list_apps.endpoint
     kind: http.endpoint
     meta:
-      comment: Список собранных окон за аутентифицированным роутером.
+      comment: The list of built windows behind the authenticated router.
       router: app:api
     method: GET
     func: list_apps
@@ -170,7 +170,7 @@ entries:
   - name: delete_app
     kind: function.lua
     meta:
-      comment: DELETE /tui-desktop/apps/{name} — убрать окно из хранилища и реестра.
+      comment: DELETE /tui-desktop/apps/{name} — remove a window from the storage and the registry.
     source: file://delete_app.lua
     method: handler
     modules:
@@ -186,13 +186,13 @@ entries:
     security:
       policies:
         - windows.tui_desktop.security:workshop_scope
-        # То же, что у композитора: хранилище читает имя базы из окружения.
+        # Same as the compositor's: the storage reads the database name from the environment.
         - windows.tui_desktop.security:storage_env
 
   - name: delete_app.endpoint
     kind: http.endpoint
     meta:
-      comment: Удаление собранного окна за аутентифицированным роутером.
+      comment: Deleting a built window behind the authenticated router.
       router: app:api
     method: DELETE
     func: delete_app

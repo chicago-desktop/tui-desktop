@@ -1,9 +1,9 @@
--- Композитор в пиксельном режиме, поднятый проверкой.
+-- The compositor in pixel mode, brought up by the check.
 --
--- Аргумент — «служба|наблюдатель|вид»: вид выбирает, что именно проверяется —
--- исправный размер ячейки, отсутствие ответа от терминала или тема без
--- chrome.paint. Отказ composer'а уезжает наблюдателю: `run` возвращает причину,
--- и потерять её здесь значило бы проверять молчание молчанием.
+-- The argument is "service|watcher|kind": the kind chooses what exactly is
+-- checked — a working cell size, no answer from the terminal, or a theme without
+-- chrome.paint. The composer's refusal goes to the watcher: `run` returns the
+-- reason, and losing it here would mean checking silence with silence.
 local process = require("process")
 local library = require("library")
 local pixel_chrome = require("pixel_chrome")
@@ -39,14 +39,14 @@ local function main(args)
     local parts = split(args)
     local service, watcher, kind = parts[1], parts[2], parts[3] or "ok"
 
-    -- Раскладка стола: четыре значка сеткой два на два, координаты названы
-    -- явно — по ним же считает проверка, куда должна уехать стрелка.
+    -- The desktop layout: four icons in a two-by-two grid, the coordinates named
+    -- explicitly — the check uses them too to work out where the arrow must go.
     local function desktop_items()
         return {
-            {id = "i1", title = "Первый", entry = "app:menu_target", x = 2, y = 4, w = 20, h = 6},
-            {id = "i2", title = "Второй", entry = "app:menu_target", x = 14, y = 4, w = 20, h = 6},
-            {id = "i3", title = "Третий", entry = "app:menu_target", x = 2, y = 8, w = 20, h = 6},
-            {id = "i4", title = "Четвёртый", entry = "app:menu_target", x = 14, y = 8, w = 20, h = 6},
+            {id = "i1", title = "First", entry = "app:menu_target", x = 2, y = 4, w = 20, h = 6},
+            {id = "i2", title = "Second", entry = "app:menu_target", x = 14, y = 4, w = 20, h = 6},
+            {id = "i3", title = "Third", entry = "app:menu_target", x = 2, y = 8, w = 20, h = 6},
+            {id = "i4", title = "Fourth", entry = "app:menu_target", x = 14, y = 8, w = 20, h = 6},
         }, nil
     end
 
@@ -72,7 +72,7 @@ local function main(args)
         pixel_chrome.clock_entry = "app:view_window"
         options.cell_size = function() return 10, 20 end
         options.catalog = function()
-            return {{title = "Завершение работы", action = "quit"}}, nil
+            return {{title = "Shut Down", action = "quit"}}, nil
         end
     elseif kind == "insets" then
         pixel_chrome.configure_insets()
@@ -80,8 +80,8 @@ local function main(args)
     elseif kind == "ok" then
         options.cell_size = function() return 10, 20 end
     elseif kind == "silent" then
-        -- Ровно то, чем отвечает gfx.cell_size() на терминале, который
-        -- промолчал: nil и причина.
+        -- Exactly what gfx.cell_size() answers on a terminal that stayed
+        -- silent: nil and a reason.
         options.cell_size = function()
             return nil, "the terminal did not say how large a cell is"
         end

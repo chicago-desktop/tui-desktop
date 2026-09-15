@@ -1,20 +1,22 @@
--- Командный канал к композитору.
+-- The command channel to the compositor.
 --
--- Композитор — обычный процесс, зарегистрированный под именем. HTTP-вызов
--- находит его по имени, шлёт сообщение и ждёт ответа на собственный inbox:
--- вызов способности сам исполняется процессом, что и делает ожидание
--- возможным.
+-- The compositor is an ordinary process registered under a name. An HTTP call
+-- finds it by name, sends a message and waits for the reply in its own inbox:
+-- the capability call is itself executed by a process, which is what makes
+-- the wait possible.
 --
--- Отсюда важное следствие для читателя ответа: «десктоп не отвечает» и
--- «десктоп не запущен» — разные вещи, и различать их обязан канал, иначе
--- незапущенный десктоп выглядит как сломанный.
+-- Hence an important consequence for whoever reads the reply: "the desktop
+-- does not answer" and "the desktop is not running" are different things, and
+-- the channel must tell them apart, otherwise a desktop that is not running
+-- looks broken.
 
 local channel = require("channel")
 local process = require("process")
 local time = require("time")
 
--- Протокол «спросить композитор» один на всех, кто спрашивает: окно, ручка и
--- сам композитор. Топик ответа берётся оттуда, а не повторяется строкой.
+-- The "ask the compositor" protocol is one for everyone who asks: a window, an
+-- endpoint and the compositor itself. The reply topic is taken from there, not
+-- repeated as a string.
 local window_api = require("window_api")
 
 local SERVICE_NAME = "windows.tui_desktop.desktop"
@@ -23,9 +25,9 @@ local BUDGET = "5s"
 
 local control = {}
 
--- Сообщение приезжает обёрнутым: payload — userdata, внутри бывает ещё и
--- массив из одного элемента. Поле, прочитанное напрямую, окажется nil без
--- всякой ошибки.
+-- A message arrives wrapped: the payload is userdata, and inside there is
+-- sometimes also a one-element array. A field read directly comes out nil
+-- without any error.
 local function unwrap(value)
     if type(value) == "userdata" then
         local ok, decoded = pcall(function() return value:data() end)
@@ -55,14 +57,14 @@ local function await(budget)
         if message:topic() == REPLY_TOPIC then
             return unwrap(message:payload()), nil
         end
-        -- Чужое сообщение не съедаем: оно адресовано не нам.
+        -- A foreign message is not eaten: it is not addressed to us.
     end
 end
 
--- call(topic, body) -> (ответ, nil) | (nil, причина)
+-- call(topic, body) -> (reply, nil) | (nil, reason)
 --
--- Команды без ответа не бывает: молчание композитора невозможно отличить
--- от применённой команды, и вызывающий поверил бы в успех.
+-- There is no command without a reply: the compositor's silence cannot be told
+-- apart from an applied command, and the caller would believe in success.
 function control.call(topic, body)
     local pid, lerr = process.registry.lookup(SERVICE_NAME)
     if not pid then

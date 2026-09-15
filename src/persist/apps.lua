@@ -1,9 +1,10 @@
--- Окно, собранное в рантайме, как запись реестра.
+-- A window built in the runtime, as a registry entry.
 --
--- Одно место, где решается, во что превращается присланный код: им пользуются
--- и мастерская (когда окно собирают), и загрузчик (когда его поднимают после
--- перезапуска). Разойдись эти две сборки — окно вело бы себя по-разному до и
--- после рестарта, а это худший вид расхождения: он проявляется через сутки.
+-- The one place that decides what the submitted code turns into: both the
+-- workshop (when a window is built) and the loader (when it is brought back
+-- after a restart) use it. Were these two builds to diverge, a window would
+-- behave differently before and after a restart, and that is the worst kind
+-- of divergence: it shows up a day later.
 
 local registry = require("registry")
 
@@ -13,38 +14,42 @@ apps.NAMESPACE = "windows.tui_desktop.apps"
 apps.WINDOW_TYPE = "tui_desktop.window"
 apps.POLICY = "windows.tui_desktop.security:app_window_scope"
 
--- Что окну можно требовать. Список узкий нарочно: окно рисует себя и читает
--- данные, но не порождает процессов и не ходит наружу.
+-- What a window may require. The list is narrow on purpose: a window draws
+-- itself and reads data, but does not spawn processes and does not go outside.
 --
--- `env` отсюда убран, и не из осторожности: права `env.get` у окна нет, а без
--- права `env.get` не отказывает громко — он отдаёт nil, и соседнее `or
--- умолчание` превращает отказ по правам в «человек ничего не назначал».
--- Выдать право было бы хуже: код окна приезжает по HTTP, а в окружении лежат
--- токены. Отказ на сборке называет модуль по имени — это видно сразу.
+-- `env` was removed from here, and not out of caution: the window has no
+-- `env.get` permission, and without the permission `env.get` does not refuse
+-- loudly — it returns nil, and the neighbouring `or default` turns a
+-- permission refusal into "the person assigned nothing".
+-- Granting the permission would be worse: the window's code arrives over HTTP,
+-- and the environment holds tokens. A refusal at build time names the module —
+-- that is visible at once.
 apps.ALLOWED_MODULES = {
     channel = true,
     time = true,
     tty = true,
     json = true,
     sql = true,
-    -- Нужен, чтобы окно могло попросить композитор открыть соседнее окно.
-    -- Права при этом узкие: послать сообщение и найти адресата, не более.
+    -- Needed so that a window can ask the compositor to open a neighbouring
+    -- window. The permissions are narrow: send a message and find the
+    -- addressee, nothing more.
     process = true,
 }
 
 apps.DEFAULT_MODULES = {"channel", "time", "tty"}
 
--- Библиотека десктопа подключается каждому окну под этим именем; занять его
--- своим импортом нельзя.
+-- The desktop library is attached to every window under this name; it cannot
+-- be taken by a window's own import.
 apps.DESKTOP_IMPORT = "windows.tui_desktop.desktop:window_api"
 apps.WINDOW_TYPES = {app = true, dialog = true, tool = true}
 
--- Описание окна сверх кода — то, что у записи из файла лежит в meta и
--- imports. Здесь только известные поля: чужие не доезжают до записи молча.
+-- The window's description beyond the code — what an entry from a file keeps
+-- in meta and imports. Only known fields here: foreign ones do not silently
+-- reach the entry.
 --
---   imports      — {имя = id библиотеки}: SDK оболочки, свои библиотеки.
---   pixel_render — библиотека пиксельного вида; pixel_state — само окно.
---   image, icon, window_type, resizable, in_menu, order — как у записи.
+--   imports      — {name = library id}: the shell's SDK, own libraries.
+--   pixel_render — the pixel view library; pixel_state — the window itself.
+--   image, icon, window_type, resizable, in_menu, order — as in an entry.
 function apps.normalize_spec(given: any): any
     local spec: any = type(given) == "table" and given or {}
     local out: any = {}
@@ -73,9 +78,9 @@ function apps.normalize_spec(given: any): any
     return out
 end
 
--- Что в описании не пройдёт. Каждый отказ называет поле и причину: окно с
--- мёртвым импортом применилось бы, попало в меню и упало при первом
--- открытии — когда причину связать с полем труднее всего.
+-- What in the description will not pass. Each refusal names the field and the
+-- reason: a window with a dead import would be applied, get into the menu and
+-- crash on the first open — when the reason is hardest to tie to the field.
 function apps.rejected_spec(given: any): any
     local out = {}
     local spec: any = type(given) == "table" and given or {}
@@ -114,10 +119,10 @@ function apps.rejected_spec(given: any): any
     return out
 end
 
--- prepare(body) -> окно | nil, причина
+-- prepare(body) -> window | nil, reason
 --
--- Одна проверка на все входы мастерской — HTTP и туз MCP: два разбора одного
--- тела разошлись бы на первом же новом поле.
+-- One check for all of the workshop's inputs — HTTP and the MCP tool: two
+-- parsings of one body would diverge on the very first new field.
 function apps.prepare(body: any): (any, any)
     local given: any = type(body) == "table" and body or {}
     local name = type(given.name) == "string" and given.name or ""
@@ -126,8 +131,8 @@ function apps.prepare(body: any): (any, any)
     end
     local source = type(given.source) == "string" and given.source or ""
     if source == "" then return nil, "source: the window code is required" end
-    -- Процесс запускается методом main. Запись без него применится молча и
-    -- умрёт при первом открытии, уже без объяснения причины.
+    -- The process is started by the main method. An entry without it is
+    -- applied silently and dies on the first open, with no explanation why.
     if not source:find("main", 1, true) then
         return nil, "source: the code must return a table with a main function"
     end
@@ -142,8 +147,8 @@ function apps.prepare(body: any): (any, any)
         height = tonumber(given.height) or 12,
         source = source,
         modules = apps.normalize_modules(given.modules),
-        -- Папка меню «Пуск», как `meta.group` у записи из файла. Пусто —
-        -- оболочка решает сама.
+        -- The "Start" menu folder, like `meta.group` of an entry from a file.
+        -- Empty — the shell decides itself.
         group = type(given.group) == "string" and given.group or "",
         spec = apps.normalize_spec(given),
     }, nil
@@ -153,9 +158,9 @@ function apps.entry_id(name)
     return apps.NAMESPACE .. ":" .. name
 end
 
--- Собранное окно всегда несёт tty и channel: без них оно не сможет ни
--- нарисоваться, ни дождаться события, и упадёт на первой же строке — уже
--- после того, как человек решит, что окно создано.
+-- A built window always carries tty and channel: without them it can neither
+-- draw itself nor wait for an event, and would crash on its very first line —
+-- after the person has already decided the window is created.
 function apps.normalize_modules(requested)
     local seen, out = {}, {}
     local function add(name: any)
@@ -167,17 +172,19 @@ function apps.normalize_modules(requested)
     for _, name in ipairs(type(requested) == "table" and requested or {}) do add(name) end
     add("channel")
     add("tty")
-    -- `process` добавляется ради самого окна, а не ради библиотеки: она
-    -- объявляет свои модули сама и работает с ними — так `desktop` читает имя
-    -- композитора модулем `ctx`, которого в этом списке нет. Прямой вызов
-    -- `process.send` из кода окна без этой строки не собрался бы.
+    -- `process` is added for the window itself, not for the library: the
+    -- library declares its modules itself and works with them — that is how
+    -- `desktop` reads the compositor's name with the `ctx` module, which is not
+    -- in this list. A direct `process.send` call from the window's code would
+    -- not build without this line.
     add("process")
     table.sort(out)
     return out
 end
 
--- Модули, которые запрошены, но не разрешены. Отказ обязан называть их:
--- «окно не работает» без имени модуля отправляет искать ошибку в коде окна.
+-- Modules that are requested but not allowed. The refusal must name them:
+-- "the window does not work" without the module's name sends one looking for
+-- the error in the window's code.
 function apps.rejected_modules(requested)
     local out = {}
     for _, name in ipairs(type(requested) == "table" and requested or {}) do
@@ -196,13 +203,15 @@ function apps.build_entry(window)
         height = window.height,
         comment = "Built in the runtime; the source is stored in windows_tui_desktop_windows.",
     }
-    -- Папка меню — как у записи из файла, тем же полем. Пустая не пишется
-    -- вовсе: «не названа» и «названа пустой» для оболочки разные ответы,
-    -- и решать за окно, что оно хочет на корень, мастерская не должна.
+    -- The menu folder — as in an entry from a file, with the same field. An
+    -- empty one is not written at all: "not named" and "named empty" are
+    -- different answers for the shell, and the workshop must not decide for
+    -- the window that it wants the root.
     if type(window.group) == "string" and window.group ~= "" then meta.group = window.group end
 
-    -- Описание сверх кода: те же поля и те же имена, что у записи из файла,
-    -- поэтому каталог и тема узнают их без перевода.
+    -- The description beyond the code: the same fields and the same names as
+    -- in an entry from a file, so the catalog and the theme recognize them
+    -- without translation.
     local spec = apps.normalize_spec(window.spec)
     if spec.image then meta.image = spec.image end
     if spec.icon then meta.icon = spec.icon end
@@ -210,8 +219,8 @@ function apps.build_entry(window)
     if spec.resizable == false then meta.resizable = false end
     if spec.in_menu == false then meta.in_menu = false end
     if spec.order then meta.order = spec.order end
-    -- Пиксельный вид: рисует названная библиотека, состояние публикует само
-    -- окно — как у окон SDK оболочки из файлов.
+    -- Pixel view: the named library draws, the window itself publishes the
+    -- state — as with the shell's SDK windows from files.
     if spec.pixel_render then
         meta.pixel_render = spec.pixel_render
         meta.pixel_state = apps.entry_id(window.name)
@@ -233,10 +242,10 @@ function apps.build_entry(window)
     }
 end
 
--- apply(window) -> (true, nil) | (nil, причина)
+-- apply(window) -> (true, nil) | (nil, reason)
 --
--- Повторное имя — обновление: `create` поверх занятого id отказывается, и
--- правка окна выглядела бы как «имя занято навсегда».
+-- A repeated name is an update: `create` over a taken id refuses, and editing
+-- a window would look like "the name is taken forever".
 function apps.apply(window)
     local snapshot, serr = registry.snapshot()
     if not snapshot then return nil, "registry snapshot: " .. tostring(serr) end
@@ -254,10 +263,10 @@ function apps.apply(window)
     return true, nil
 end
 
--- remove(name) -> (true, nil) | (nil, причина)
+-- remove(name) -> (true, nil) | (nil, reason)
 --
--- Запись, которой нет, — это успех: удаление должно приводить к отсутствию,
--- а не спорить о том, как отсутствие возникло.
+-- An entry that does not exist is a success: removal must lead to absence,
+-- not argue about how the absence came about.
 function apps.remove(name)
     local id = apps.entry_id(name)
     if not registry.get(id) then return true, nil end

@@ -1,32 +1,34 @@
--- Тема композитора: единственное, что композитор знает о виде.
+-- The compositor's theme: the only thing the compositor knows about the look.
 --
--- Композитор зовёт только функции контракта (README, «Контракт темы») и сам
--- не решает ни про рамки, ни про полосы, ни про то, сколько строк занято
--- сверху и снизу. Вторая оболочка приносит другую тему и получает другой
--- вид, не трогая механику окон.
+-- The compositor calls only the contract's functions (README, "The look is
+-- separate from the mechanics: the theme contract") and decides nothing
+-- itself about borders, bars, or how many rows are taken at the top and
+-- bottom. A second shell brings another theme and
+-- gets another look without touching the window mechanics.
 --
--- Здесь нет ни одного вызова, который уходит в рантайм: только строки и
--- арифметика. Поэтому файл — библиотека, а не процесс, и его можно звать
--- из любой отрисовки.
+-- There is not a single call here that goes into the runtime: only strings and
+-- arithmetic. So the file is a library, not a process, and it can be called
+-- from any drawing.
 --
--- Правило, которое стоит держать в голове при правках: рамка и содержимое
--- окна кладутся на холст РАЗДЕЛЬНО. Попытка слить их в одну строку означает
--- решения об обрезке, которые принять уже нельзя — содержимое приходит
--- готовыми строками от чужого процесса.
+-- A rule worth keeping in mind when editing: a window's border and content are
+-- put on the canvas SEPARATELY. An attempt to merge them into one string means
+-- clipping decisions that can no longer be made — the content arrives as
+-- ready-made rows from someone else's process.
 
 local tty = require("tty")
 
 local chrome = {}
 
--- Кнопки в правом верхнем углу рамки. Порядок и ширина заданы здесь один
--- раз: и рисование, и попадание мыши считают по этой же таблице, иначе
--- кнопка «закрыть» однажды окажется на один символ левее, чем выглядит.
+-- Buttons in the top right corner of the border. The order and width are set
+-- here once: both drawing and mouse hits count by this same table, otherwise
+-- the "close" button will one day end up one character to the left of where
+-- it appears.
 chrome.BUTTONS = {
     {id = "minimize", label = "[-]"},
     {id = "maximize", label = "[□]"},
     {id = "close",    label = "[×]"},
 }
-chrome.BUTTONS_WIDTH = 9  -- три кнопки по три ячейки
+chrome.BUTTONS_WIDTH = 9  -- three buttons of three cells each
 
 local BORDER = {
     top_left = "╭", top_right = "╮",
@@ -46,27 +48,28 @@ local styles = {
     hint       = tty.style():faint(),
 }
 
--- Сколько строк хром забирает сверху и снизу. Рабочий стол — строки
+-- How many rows the chrome takes at the top and bottom. The desktop is rows
 -- layout.top + 1 .. height - layout.bottom.
 --
--- Раньше это число было константой внутри композитора, и панель задач снизу
--- поставить было нельзя, не правя композитор: основа снова знала бы про вид.
+-- This number used to be a constant inside the compositor, and a taskbar at
+-- the bottom could not be placed without editing the compositor: the base
+-- would again know about the look.
 function chrome.layout(width: any, height: any)
     return {top = 1, bottom = 1}
 end
 
--- Фон рабочего стола и значки на нём. Здесь нет ни того, ни другого: холст
--- уже очищен, а раскладку эта оболочка не показывает — окна открываются из
--- каталога по alt+o. Тема с бирюзовым столом заливает фон и рисует значки
--- сама, возвращая разметку попаданий; отсутствие ответа читается как «на
--- столе нечего нажимать».
+-- The desktop background and the icons on it. Neither is here: the canvas is
+-- already cleared, and this shell shows no layout — windows are opened from
+-- the catalog with alt+o. A theme with a teal desktop fills the background and
+-- draws the icons itself, returning the hit layout; no answer reads as
+-- "nothing to click on the desktop".
 function chrome.fill(canvas, width: any, height: any, state)
 end
 
--- clip(text, cells) — обрезать по ЯЧЕЙКАМ, а не по байтам.
+-- clip(text, cells) — clip by CELLS, not by bytes.
 --
--- `#строка` считает байты и не видит управляющих последовательностей: на
--- кириллице и на стилизованном тексте он врёт вдвое и втрое.
+-- `#string` counts bytes and does not see control sequences: on Cyrillic and
+-- on styled text it is off two- and threefold.
 local function clip(text, cells: any)
     local width = math.tointeger(cells) or 0
     if width <= 0 then return "" end
@@ -75,9 +78,9 @@ end
 
 chrome.clip = clip
 
--- Заголовочная строка окна: рамка, имя, кнопки.
+-- A window's title row: border, name, buttons.
 --
--- Возвращает готовую строку ровно в `width` ячеек.
+-- Returns a ready string exactly `width` cells wide.
 local function title_row(title, width: any, focused)
     if width <= 0 then return "" end
     if width == 1 then return BORDER.horizontal end
@@ -87,8 +90,8 @@ local function title_row(title, width: any, focused)
     local name_style = focused and styles.title or styles.title_dim
 
     local buttons = width >= chrome.BUTTONS_WIDTH + 6 and chrome.BUTTONS_WIDTH or 0
-    -- Свободно под имя: вся ширина минус углы, минус кнопки, минус пробелы
-    -- вокруг имени и минимум один сегмент рамки слева.
+    -- Room for the name: the whole width minus the corners, minus the buttons,
+    -- minus the spaces around the name and at least one border segment on the left.
     local room = width - 2 - buttons - 4
     local name = room > 0 and clip(title or "", room) or ""
 
@@ -117,10 +120,10 @@ end
 
 chrome.title_row = title_row
 
--- Нарисовать окно целиком: рамка, заголовок, содержимое.
+-- Draw a whole window: border, title, content.
 --
--- `rows` — массив строк, как его отдаёт viewport:snapshot(). Он общий и
--- неизменяемый, поэтому кладётся как есть: put_rows сам обрежет по ширине.
+-- `rows` is an array of strings as viewport:snapshot() returns it. It is shared
+-- and immutable, so it is put as is: put_rows clips it to the width itself.
 function chrome.window(canvas, window, focused)
     local x, y, w, h = window.x, window.y, window.w, window.h
     if w < 2 or h < 2 then return end
@@ -141,11 +144,12 @@ function chrome.window(canvas, window, focused)
         BORDER.bottom_left .. string.rep(BORDER.horizontal, span) .. BORDER.bottom_right), w)
 
     if window.rows then
-        -- Обрезать по высоте рамки обязана тема: put_rows держит границу
-        -- холста, а не окна. Обычно лишних строк нет — viewport сделан ровно
-        -- в рамку, — но в момент смены размера приезжает кадр прежней
-        -- геометрии, и лишняя строка ложится поверх нижней грани и ниже
-        -- окна. Читается это как сломанная рамка, а не как отставший кадр.
+        -- Clipping to the border's height is the theme's duty: put_rows keeps
+        -- the canvas's boundary, not the window's. Usually there are no extra
+        -- rows — the viewport is made to fit the border exactly — but at the
+        -- moment of a resize a frame of the previous geometry arrives, and the
+        -- extra row lies over the bottom edge and below the window. It reads
+        -- as a broken border, not as a lagging frame.
         local room = h - 2
         local rows = window.rows
         if #rows > room then
@@ -157,11 +161,12 @@ function chrome.window(canvas, window, focused)
     end
 end
 
--- Полосы хрома: полоса окон сверху и статусная строка снизу.
+-- The chrome's bars: the window bar at the top and the status line at the bottom.
 --
--- Возвращает разметку попаданий — по ней композитор считает клик. Отдельная
--- формула для клика однажды разъедется с отрисовкой, и кнопка окажется на
--- символ левее, чем выглядит; поэтому таблица одна на оба дела.
+-- Returns the hit layout — the compositor counts a click by it. A separate
+-- formula for the click would one day drift from the drawing, and a button
+-- would end up a character to the left of where it appears; so there is one
+-- table for both jobs.
 --
 -- state = {windows, focused_id, menu_open, status, clock}
 function chrome.bars(canvas, width: any, height: any, state)
@@ -188,17 +193,20 @@ function chrome.bars(canvas, width: any, height: any, state)
     return hits
 end
 
--- Меню приложений: список окон, которые объявило приложение. Пустой список
--- говорит об этом прямо — молчаливое пустое меню читается как поломка.
--- Меню штатной темы: один уровень, без папок.
+-- The applications menu: the list of windows the application declared. An
+-- empty list says so directly — a silent empty menu reads as breakage.
+-- The standard theme's menu: one level, no folders.
 --
--- `cursor` — номер выбранной строки; тема ПОМЕЧАЕТ её в разметке (`cursor =
--- true`), и композитор потом открывает помеченную, а не считает выбор заново.
--- Цифр в строках нет намеренно: клавиатурный путь, не видный в интерфейсе,
--- заводить нельзя, а видный требует колонки цифр — её здесь и не рисуем.
--- `anchor` — контекстное меню значка: та же рамка, но у указателя, а не по
--- центру экрана, и подпись пункта берётся из `label` (у пункта «Открыть»
--- `title` — заголовок окна, которое он откроет, а не его подпись).
+-- `cursor` — the number of the selected row; the theme MARKS it in the layout
+-- (`cursor = true`), and the compositor then opens the marked one instead of
+-- computing the choice again.
+-- There are no digits in the rows on purpose: a keyboard path not visible in
+-- the interface must not be introduced, and a visible one needs a column of
+-- digits — which is exactly what we do not draw here.
+-- `anchor` — an icon's context menu: the same box, but at the pointer rather
+-- than at the screen's center, and the item's caption is taken from `label`
+-- (for the "Open" item `title` is the title of the window it will open, not
+-- its caption).
 function chrome.menu(canvas, width: any, height: any, items, failure, open: any, cursor: any, anchor: any)
     local box_w = 40
     if box_w > width - 4 then box_w = width - 4 end
@@ -232,8 +240,9 @@ function chrome.menu(canvas, width: any, height: any, items, failure, open: any,
     local hits = {}
 
     if failure then
-        -- Отказ реестра и пустой каталог выглядят одинаково, если не назвать
-        -- причину: человек ищет ошибку в своём приложении, а её там нет.
+        -- A registry refusal and an empty catalog look the same unless the
+        -- reason is named: a person looks for the error in their application,
+        -- and it is not there.
         canvas:put(left + 2, top + 2, styles.hint:render("catalog not read: " .. tostring(failure)), span - 2)
     elseif #items == 0 then
         canvas:put(left + 2, top + 2, styles.hint:render("the application declared no windows"), span - 2)
@@ -245,8 +254,8 @@ function chrome.menu(canvas, width: any, height: any, items, failure, open: any,
             canvas:put(left + 1, top + index, style:width(span):render(label), span)
             hits[#hits + 1] = {
                 row = top + index, from = left + 1, to = left + span, index = index,
-                -- Уровень и номер строки — то, по чему композитор двигает
-                -- курсор; пометка — то, по чему он открывает.
+                -- The level and the row number are what the compositor moves
+                -- the cursor by; the mark is what it opens by.
                 level = 1, slot = index, cursor = index == at,
             }
         end

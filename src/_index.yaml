@@ -1,35 +1,36 @@
 version: "1.0"
 namespace: windows.tui_desktop
 
-# Оконный десктоп в терминале.
+# A windowing desktop in the terminal.
 #
-# Один процесс-композитор владеет физическим экраном и рисует окна; каждое
-# окно — отдельный процесс, который пишет в собственный viewport и считает,
-# что владеет терминалом целиком. Ни одно окно не знает, что оно окно.
+# One compositor process owns the physical screen and draws the windows; each
+# window is a separate process that writes to its own viewport and believes
+# it owns the whole terminal. No window knows it is a window.
 #
-# Стек — модуль `tty` рантайма (>= 0.3.40a): physical TTY → surface
-# композитора → viewport → процесс окна → PTY-прокси для внешних программ.
+# The stack is the runtime's `tty` module (>= 0.3.40a): physical TTY → the
+# compositor's surface → viewport → window process → PTY proxy for external
+# programs.
 
 entries:
   - name: definition
     kind: ns.definition
     meta:
       title: TUI Desktop
-      description: Оконный менеджер для терминала — композитор с перекрывающимися окнами, окна с настоящими программами под PTY, командный канал для агента и хранилище окон, собранных на ходу.
+      description: Window manager for the terminal — a compositor with overlapping windows, windows with real programs under a PTY, a command channel for an agent and storage for windows built on the fly.
 
-  # ─── Зависимости ─────────────────────────────────────────────────────
+  # ─── Dependencies ────────────────────────────────────────────────────
   - version: "*"
     name: dep.wippy.migration
     kind: ns.dependency
     meta:
-      comment: Миграция для таблицы окон, собранных в рантайме.
+      comment: Migration for the table of windows built in the runtime.
     component: wippy/migration
 
-  # ─── Что модуль просит у приложения ──────────────────────────────────
+  # ─── What the module asks of the application ─────────────────────────
   - name: target_db
     kind: ns.requirement
     meta:
-      comment: База, где хранятся окна, собранные в рантайме.
+      comment: The database where windows built in the runtime are stored.
     default: app:db
     targets:
       - entry: windows.tui_desktop.migrations:01_create_windows
@@ -38,7 +39,7 @@ entries:
   - name: api_router
     kind: ns.requirement
     meta:
-      comment: HTTP-роутер, к которому крепятся командный канал и мастерская. Обязан требовать аутентификацию и endpoint_firewall.
+      comment: The HTTP router the command channel and the workshop attach to. It must require authentication and endpoint_firewall.
     default: app:api
     targets:
       - entry: windows.tui_desktop.api:list_windows.endpoint
@@ -54,27 +55,27 @@ entries:
       - entry: windows.tui_desktop.api:window_action.endpoint
         path: .meta.router
 
-  # ─── Хосты ───────────────────────────────────────────────────────────
-  # Единственный процесс на настоящих stdin/stdout/stderr — композитор.
+  # ─── Hosts ───────────────────────────────────────────────────────────
+  # The only process on the real stdin/stdout/stderr is the compositor.
   #
-  # hide_logs обязателен: диффер поверхности считает себя единственным
-  # писателем в терминал, и строка лога разъезжает кадр насовсем —
-  # неизменившиеся строки не перерисовываются.
+  # hide_logs is mandatory: the surface's differ believes it is the only
+  # writer to the terminal, and a log line scrambles the frame for good —
+  # rows that did not change are not redrawn.
   #
-  # ВНИМАНИЕ приложению-хозяину: автодетект терминального хоста в CLI —
-  # просто подсчёт записей `terminal.host` во всём реестре. Установка этого
-  # модуля делает их две, и с этого момента КАЖДАЯ команда требует явного
-  # `--host`. Это цена, а не дефект; альтернатива — забрать чужой хост и
-  # лишить приложение лога.
+  # ATTENTION, host application: the CLI's auto-detection of the terminal host
+  # is just a count of `terminal.host` entries in the whole registry. Installing
+  # this module makes it two, and from then on EVERY command requires an
+  # explicit `--host`. This is a cost, not a defect; the alternative is to take
+  # over someone else's host and deprive the application of its log.
   - name: terminal
     kind: terminal.host
     hide_logs: true
     lifecycle:
       auto_start: true
 
-  # Хост окон. Он реализует FrameAttachmentHost — именно это позволяет
-  # передать окну грант на viewport при spawn. max_processes ограничивает,
-  # сколько окон может быть открыто разом.
+  # The window host. It implements FrameAttachmentHost — that is exactly what
+  # makes it possible to pass a window a grant on the viewport at spawn.
+  # max_processes limits how many windows can be open at once.
   - name: workers
     kind: process.host
     host:
@@ -83,10 +84,10 @@ entries:
     lifecycle:
       auto_start: true
 
-  # Запуск внешних программ для PTY-окон. Без command_whitelist: проверка
-  # там — точное совпадение всей строки вместе с аргументами, так что
-  # "/bin/bash" не разрешает "/bin/bash -i". Ограничение
-  # держит политика.
+  # Launching external programs for PTY windows. Without command_whitelist: the
+  # check there is an exact match of the whole string including arguments, so
+  # "/bin/bash" does not allow "/bin/bash -i". The restriction
+  # is held by the policy.
   - name: exec
     kind: exec.native
     default_env:

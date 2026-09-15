@@ -22,10 +22,10 @@ lint:
 # The runner exits 0 when it discovers zero tests, which turns a broken
 # discovery setup into a false-green run. An empty discovery is always a
 # defect here — the template ships suites — so both targets fail on it.
-# Модуль объявляет собственный terminal.host — ему нужен hide_logs, — и с
-# этого момента автодетект терминального хоста в CLI отказывается выбирать:
-# он просто считает записи kind terminal.host, а их теперь две. Набор идёт на
-# обычном хосте приложения; свой нужен только десктопу.
+# The module declares its own terminal.host — it needs hide_logs — and from
+# then on the CLI's terminal host autodetection refuses to choose: it simply
+# counts entries of kind terminal.host, and now there are two. The suite runs
+# on the application's ordinary host; only the desktop needs its own.
 TEST_HOST := wippy.terminal:host
 test:
 	cd test && wippy test --host $(TEST_HOST) 2>&1 | tee .wippy/last-test-run.log && ! grep -q "No tests found" .wippy/last-test-run.log

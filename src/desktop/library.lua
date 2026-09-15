@@ -1,22 +1,23 @@
--- Композитор: механика оконного десктопа, вызываемая как библиотека.
+-- Compositor: the mechanics of a windowed desktop, called as a library.
 --
--- Вида здесь нет. Всё, что рисуется, приходит темой в options.chrome, и
--- геометрию хрома — сколько строк занято сверху и снизу — тоже объявляет
--- она. Поэтому вторая оболочка приносит свою тему и получает другой вид,
--- не копируя ни хостинг окон, ни PTY, ни командный канал.
+-- There is no look here. Everything that is drawn comes from the theme in
+-- options.chrome, and the chrome's geometry — how many rows are taken at the
+-- top and at the bottom — is declared by the theme too. So a second shell
+-- brings its own theme and gets a different look without copying the window
+-- hosting, the PTY or the command channel.
 --
--- Он держит список окон в z-порядке, кладёт их кадры на общий холст,
--- раздаёт ввод и принимает команды снаружи. Окна о нём не знают: каждое
--- пишет в свой viewport через обычный `tty` и считает, что владеет
--- терминалом целиком.
+-- It keeps the list of windows in z-order, lays their frames on a shared
+-- canvas, dispatches input and takes commands from outside. The windows do
+-- not know about it: each writes to its own viewport through the ordinary
+-- `tty` and believes it owns the whole terminal.
 --
--- Три правила, нарушение которых даёт молчаливую поломку:
---   * ни один yield-вызов не заканчивает функцию голым `return` — в
---     go-lua v1.5.18 такой хвостовой вызов не выполняется вовсе;
---   * `snapshot().rows` — общий неизменяемый массив брокера, его нельзя
---     править на месте;
---   * `viewport:send` до `tty.start()` окна — ошибка, а не потеря, поэтому
---     ввод придерживается до первого кадра.
+-- Three rules whose violation gives a silent breakage:
+--   * no yield call ends a function with a bare `return` — in go-lua
+--     v1.5.18 such a tail call is not executed at all;
+--   * `snapshot().rows` is the broker's shared immutable array; it must not
+--     be edited in place;
+--   * `viewport:send` before the window's `tty.start()` is an error, not a
+--     loss, so input is held back until the first frame.
 
 local channel = require("channel")
 local process = require("process")
@@ -29,19 +30,20 @@ local logger = require("logger")
 local repo = require("repo")
 local apps = require("apps")
 
--- Что запись реестра говорит о своей программе: тип окна и признак «показывать
--- в меню». Отдельной библиотекой, потому что читают её и меню, и открытие, а
--- умолчание, посчитанное в двух местах, однажды разойдётся.
+-- What a registry entry says about its program: the window type and the
+-- "show in the menu" flag. A separate library because both the menu and the
+-- open read it, and a default computed in two places will one day diverge.
 local programs = require("programs")
 
--- Сборка пиксельного кадра: пробелы под картинками, разбор размещений и
--- попаданий. Отдельной библиотекой, потому что это арифметика — её проверяют
--- без терминала и без графики.
+-- Assembly of the pixel frame: blanks under the pictures, parsing of
+-- placements and hits. A separate library because it is arithmetic — it is
+-- tested without a terminal and without graphics.
 local pixels = require("pixels")
 
--- Протокол «окно просит десктоп». Отсюда механика берёт ключ, которым имя
--- композитора кладётся окну в контекст: разойдись ключ у отправителя и
--- получателя, окно молча обращалось бы к штатному имени.
+-- The "window asks the desktop" protocol. From it the mechanics take the key
+-- under which the compositor's name is put into the window's context: were
+-- the key to differ between sender and receiver, the window would silently
+-- address the default name.
 local window_api = require("window_api")
 
 -- claim_desktop_name(family, slots) -> name | nil, reason
@@ -63,26 +65,27 @@ end
 
 local WINDOW_HOST = "windows.tui_desktop:workers"
 
--- Окно — это любая запись процесса, которая умеет писать в свой tty-порт.
--- Модуль знает ровно одну свою (программа под PTY); всё остальное приносит
--- приложение и называет записью — иначе каждое новое окно требовало бы
--- правки этого модуля.
+-- A window is any process entry that can write to its tty port. The module
+-- knows exactly one of its own (a program under a PTY); everything else is
+-- brought by the application and named by an entry — otherwise every new
+-- window would need a change to this module.
 local PTY_WINDOW = "windows.tui_desktop.desktop:window_pty"
 
--- Каталог окон приложения: записи, помеченные этим meta.type, композитор
--- находит сам и показывает в меню по alt+o.
+-- The application's window catalog: the compositor finds entries marked with
+-- this meta.type itself and shows them in the menu on alt+o.
 local WINDOW_META_TYPE = programs.WINDOW_META_TYPE
 
--- Топик ответа берётся у протокола окна, а не повторяется строкой: на нём
--- держится подписка окна, и разойдись они — ответ уехал бы окну в inbox, где
--- его съел бы чужой цикл.
+-- The reply topic is taken from the window protocol rather than repeated as
+-- a string: the window's subscription rests on it, and were they to differ,
+-- the reply would land in the window's inbox, where another loop would eat
+-- it.
 local REPLY_TOPIC = window_api.REPLY_TOPIC
 
--- Команды, адресованные конкретному окну. Список нужен, чтобы отличать «нет
--- такого окна» от «нет такой команды»: пока их различал только порядок
--- проверок, ЛЮБАЯ неизвестная команда отвечала «нет окна nil» — то есть
--- отправитель шёл искать опечатку в идентификаторе, которого не посылал, а
--- ветка про неизвестную команду была недостижима вовсе.
+-- Commands addressed to a specific window. The list is needed to tell "no
+-- such window" from "no such command": while only the order of the checks
+-- told them apart, ANY unknown command answered "no window nil" — so the
+-- sender went looking for a typo in an id it never sent, and the branch for
+-- an unknown command was unreachable altogether.
 local WINDOW_COMMANDS = {
     ["desktop.close"] = true,
     ["desktop.focus"] = true,
@@ -92,9 +95,9 @@ local WINDOW_COMMANDS = {
     ["desktop.screen"] = true,
     ["desktop.type"] = true,
     ["desktop.key"] = true,
-    -- Состояние окна-вида, присланное его поставщиком. Тоже адресовано окну,
-    -- поэтому живёт здесь же: иначе «нет такого окна» и «нет такой команды»
-    -- снова разошлись бы по разным веткам.
+    -- The state of a view window, sent by its state provider. Also addressed to
+    -- a window, so it lives here too: otherwise "no such window" and "no such
+    -- command" would again split into different branches.
     ["desktop.state"] = true,
 }
 
@@ -102,13 +105,14 @@ local DEFAULT_COMMAND = "/bin/bash -i"
 local CLOSE_GRACE = "3s"
 
 
--- Часы на панели задач должны идти и тогда, когда никто ничего не нажимает.
--- Без этого тика кадр обновляется только на событии, и время на экране
--- останавливается — вид «оболочка зависла» при исправной оболочке.
+-- The taskbar clock must keep going even when nobody presses anything.
+-- Without this tick the frame is updated only on an event, and the time on
+-- the screen stops — a "the shell has hung" look with a working shell.
 local CLOCK_TICK = "15s"
--- Сколько последних кадров помнит замер времени (`frame.window` в статусе).
--- Двести — несколько секунд под потоком вывода и минуты в покое: хватает на
--- p95, не хватает, чтобы старый всплеск висел в сводке вечно.
+-- How many recent frames the timing meter remembers (`frame.window` in the
+-- status). Two hundred is a few seconds under a stream of output and minutes
+-- at rest: enough for p95, not enough for an old spike to hang in the summary
+-- forever.
 local FRAME_WINDOW = 200
 -- The shortest gap between two frames, in milliseconds. A frame per mouse
 -- motion and per pty chunk backed the loop up until nothing — the clock
@@ -116,17 +120,17 @@ local FRAME_WINDOW = 200
 -- to the terminal during a resize). Requests inside the gap are one frame.
 local FRAME_MS = 33
 
--- Задержка, с которой наведение в меню раскрывает папку или закрывает
--- подменю. Как в Windows: без неё мышь, идущая от папки к её подменю по
--- диагонали, проходит над соседней строкой и закрывает то, куда идёт.
--- Выделение самой строки задержки не ждёт.
+-- The delay with which hovering in the menu opens a folder or closes a
+-- submenu. As in Windows: without it the mouse, going diagonally from a
+-- folder to its submenu, passes over the neighbouring row and closes what it
+-- is heading for. Highlighting the row itself does not wait for the delay.
 local HOVER_DELAY = "300ms"
 
--- Область уведомлений (трей). Пункт — короткая подпись у часов, которую
--- кладёт процесс приложения (погода, почта, состояние сервиса). Потолки не
--- украшение: пункт шире часов съедает кнопки окон, а седьмой пункт почти
--- всегда значит, что поставщик кладёт новый ключ на каждое обновление вместо
--- того, чтобы обновлять свой.
+-- The notification area (tray). An item is a short caption by the clock, put
+-- there by an application process (weather, mail, a service's state). The
+-- limits are not decoration: an item wider than the clock eats the window
+-- buttons, and a seventh item almost always means that the provider puts a
+-- new key on every update instead of updating its own.
 local TRAY_MAX = 6
 local TRAY_TEXT = 16
 local TRAY_KEY = 64
@@ -142,9 +146,9 @@ local WIDGET_MIN_W, WIDGET_MAX_W = 10, 40
 local WIDGET_MIN_H, WIDGET_MAX_H = 2, 16
 local WIDGET_ORDER = 100
 
--- Печатаемый текст, который агент шлёт в окно, отправляется по одной
--- клавише: у окна нет «вставки», а `paste` доезжает до программы только
--- если та включила bracketed paste.
+-- Printable text an agent sends to a window is sent one key at a time: a
+-- window has no "paste", and `paste` reaches the program only if it has
+-- turned on bracketed paste.
 local function runes(text)
     local out = {}
     for char in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
@@ -153,9 +157,9 @@ local function runes(text)
     return out
 end
 
--- Сообщение процесса приезжает обёрнутым: payload — userdata, а внутри
--- бывает ещё и массив из одного элемента. Прочитать поле напрямую значит
--- получить nil без всякой ошибки.
+-- A process message arrives wrapped: the payload is userdata, and inside
+-- there may also be an array of one element. Reading a field directly gives
+-- nil without any error.
 local function unwrap(value)
     if type(value) == "userdata" then
         local ok, decoded = pcall(function() return value:data() end)
@@ -167,8 +171,9 @@ local function unwrap(value)
     return value
 end
 
--- clamp принимает что угодно и всегда возвращает целое: значения приходят
--- и от мыши, и из JSON команды, где числом может оказаться что угодно.
+-- clamp takes anything and always returns an integer: values come both from
+-- the mouse and from a command's JSON, where anything may turn up as a
+-- number.
 local function clamp(value, low, high)
     local lo = math.floor(low)
     local hi = math.floor(high)
@@ -181,42 +186,44 @@ local function clamp(value, low, high)
     return number
 end
 
--- run(options) — поднять композитор на текущем терминале.
+-- run(options) — bring the compositor up on the current terminal.
 --
---   options.chrome        — тема (контракт в README). Обязательна.
---   options.service_name  — имя, под которым композитор виден процессам.
+-- options.chrome        — the theme (contract in the README). Required.
+-- options.service_name  — the name under which processes see the compositor.
 --   options.service_slots — how many desktops of that name may run at once
 --                           (default window_api.DESKTOP_SLOTS); each claims
 --                           the first free of name, name.2, …
---   options.hint          — подсказка на пустом рабочем столе.
---   options.logon         — (screen) -> identity | nil, причина. Вход до первого
---                           кадра: identity = {actor, scope, context}, и под ней
---                           порождается каждое окно. Подробности в README.
+-- options.hint          — the hint on an empty desktop. options.logon
+-- — (screen) -> identity | nil, reason. Logon before the first frame:
+-- identity = {actor, scope, context}, and every window is spawned under it.
+-- Details in README.
 --   options.widgets       — () -> {{entry, title, w, h, order, opens}, …}, failure:
 --                           desktop widgets to spawn (README, "Desktop widgets").
 local function run(options: any)
     options = type(options) == "table" and options or {}
 
-    -- Тема обязательна и не подставляется молча: композитор без вида — это
-    -- пустой экран, в котором нечего искать. Пусть отказ назовёт причину.
+    -- The theme is required and is not substituted silently: a compositor
+    -- without a look is an empty screen with nothing to look for in it. Let the
+    -- refusal name the reason.
     local chrome: any = options.chrome
     if type(chrome) ~= "table" then
         return nil, "the compositor was given no theme (options.chrome)"
     end
 
-    -- Пиксельный хром: рамки, заголовки, значки и панель задач приезжают
-    -- растрами, содержимое окон остаётся символами. Включается ЯВНО — тем же
-    -- решением, которым выбирают тему: терминал, умеющий графику, не повод
-    -- рисовать иначе, чем человек просил.
+    -- Pixel chrome: frames, titles, icons and the taskbar arrive as rasters,
+    -- window content stays characters. It is turned on EXPLICITLY — by the
+    -- same decision that picks the theme: a terminal capable of graphics is
+    -- no reason to draw differently from what the person asked for.
     --
-    -- Размер ячейки спрашивает ОБОЛОЧКА и передаёт сюда функцией. Так вышло не
-    -- из вкуса: модуль `gfx` есть не в каждом рантайме, а запись, объявившая
-    -- недоступный модуль, роняет боот целиком («node with ID {gfx :gfx} not
-    -- found») — измерено. Механика, объявившая `gfx`, стала бы негодной везде,
-    -- где графики нет, включая тех, кому пиксели не нужны. Решение при этом
-    -- осталось здесь: без размера ячейки режим НЕ включается и называет
-    -- причину — картинка не того размера выглядит как ошибка рисования, а не
-    -- как незаданный вопрос.
+    -- The cell size is asked by the SHELL and passed here as a function. That
+    -- is not a matter of taste: the `gfx` module is not in every runtime, and
+    -- an entry that declared an unavailable module fails the whole boot
+    -- ("node with ID {gfx :gfx} not found") — measured. Mechanics that
+    -- declared `gfx` would become unusable wherever there is no graphics,
+    -- including for those who do not need pixels. The decision still stays
+    -- here: without a cell size the mode does NOT turn on and names the
+    -- reason — a picture of the wrong size looks like a drawing error, not
+    -- like an unasked question.
     local PIXELS = options.pixels == true
     local cell_w, cell_h = 0, 0
     if PIXELS then
@@ -232,8 +239,8 @@ local function run(options: any)
         if not PIXELS then return true end
         local w, h = options.cell_size()
         if type(w) ~= "number" or type(h) ~= "number" then
-            -- gfx.cell_size() отвечает (nil, причина): вторым значением тут
-            -- приезжает именно она.
+            -- gfx.cell_size() answers (nil, reason): the second value here is
+            -- exactly that reason.
             return nil, "pixel mode does not start: " .. tostring(h)
         end
         local next_w = math.tointeger(math.floor(w)) or 0
@@ -261,19 +268,21 @@ local function run(options: any)
     local HINT = type(options.hint) == "string" and options.hint
         or "alt+n — bash window · alt+o — programs · ctrl+q — quit"
 
-    -- Вход в систему. Оболочка отдаёт функцию, которая рисует диалог на этом
-    -- же терминале и возвращает личность: {actor, scope, context = {...}}.
-    -- Под этой личностью композитор порождает КАЖДОЕ окно — и это вся
-    -- механика «текущего пользователя»: сам композитор остаётся под своим
-    -- актором, а личность окна фиксируется в момент порождения. Сменить
-    -- пользователя значит закрыть окна и войти заново.
+    -- Logon. The shell hands over a function that draws a dialog on this same
+    -- terminal and returns an identity: {actor, scope, context = {...}}. The
+    -- compositor spawns EVERY window under this identity — and that is the
+    -- whole mechanism of the "current user": the compositor itself stays
+    -- under its own actor, and a window's identity is fixed at the moment of
+    -- the spawn. Switching the user means closing the windows and logging on
+    -- again.
     local logon: any = type(options.logon) == "function" and options.logon or nil
     local IDENTITY: any = nil
 
-    -- Порождение окна под вошедшим пользователем. Одна функция на оба вида
-    -- окон: поставщик состояния и процесс с viewport получают одного и того
-    -- же актора, иначе окно-вид и окно с программой жили бы под разными
-    -- людьми, и различие всплыло бы на первом же «мои агенты».
+    -- Spawning a window under the logged-on user. One function for both kinds
+    -- of windows: the state provider and the process with a viewport get the
+    -- same actor, otherwise a view window and a program window would live
+    -- under different people, and the difference would surface at the very
+    -- first "my agents".
     local function spawner(base: any, context: any): any
         if IDENTITY then
             for key, value in pairs(IDENTITY.context or {}) do
@@ -285,32 +294,33 @@ local function run(options: any)
         return chain
     end
 
-    -- Каталог программ. Внутренний отдаёт плоский список: механике окон
-    -- незачем знать про папки меню и значки. Оболочка, которой это нужно,
-    -- приносит свой — и отвечает за форму сама.
+    -- The program catalog. The built-in one gives a flat list: the window
+    -- mechanics have no business knowing about menu folders and icons. A shell
+    -- that needs them brings its own — and answers for the shape itself.
     local read_catalog: any = type(options.catalog) == "function" and options.catalog or nil
 
-    -- Раскладка рабочего стола — ярлыки и папки. Механика их не хранит и
-    -- не создаёт: это состояние оболочки, которое двигает пользователь.
-    -- Она только показывает то, что дали, и говорит, куда кликнули.
+    -- The desktop layout — shortcuts and folders. The mechanics neither store
+    -- nor create them: this is the shell's state, moved by the user. The
+    -- mechanics only show what they were given and say where the click went.
     local read_desktop: any = type(options.desktop_items) == "function" and options.desktop_items or nil
-    -- Окно свойств самого стола — пункт «Свойства» по правой кнопке на
-    -- пустом месте. Идентификатор записи; нет — нет и меню.
+    -- The properties window of the desktop itself — the "Properties" item on a
+    -- right click on an empty spot. An entry id; none — no menu either.
     local desktop_properties: any = type(options.desktop_properties) == "string" and options.desktop_properties or nil
     -- Desktop widgets (FR-006): `() -> {{entry, title, w, h, order, opens}, …}, failure`.
     -- The shell reads the registry and hands the list over, as it does for
     -- desktop items; the base spawns the entries and draws nothing.
     local read_widgets: any = type(options.widgets) == "function" and options.widgets or nil
 
-    -- Восстановление окон мастерской требует права менять реестр. Оболочке
-    -- под другим актором его может не быть, и тогда важно, чтобы отказ был
-    -- назван, а не проглочен: он уезжает в restore_report.
+    -- Restoring the workshop windows needs the permission to change the
+    -- registry. A shell under a different actor may not have it, and then it
+    -- matters that the refusal is named rather than swallowed: it goes into
+    -- restore_report.
     local RESTORE = options.restore ~= false
 
-    -- Толщина рамки. Раньше композитор считал её равной единице со всех
-    -- сторон — то есть знал про вид. Тема с полосой заголовка ВНУТРИ рамки
-    -- забирает сверху три строки, и окно, посчитанное по единице, отдало бы
-    -- программе на строку больше, чем видно.
+    -- The frame thickness. The compositor used to take it as one on every side
+    -- — that is, it knew about the look. A theme with the title bar INSIDE the
+    -- frame takes three rows at the top, and a window computed with one would
+    -- give the program one row more than is visible.
     local insets: any = {}
     local FRAME_W, FRAME_H, MIN_W, MIN_H = 2, 2, 12, 5
     local function refresh_frame()
@@ -331,10 +341,10 @@ local function run(options: any)
     end
     refresh_frame()
 
-    -- Записать новое место значка. Раскладку хранит оболочка, поэтому
-    -- композитор не пишет её сам, а просит — и откатывает значок, если
-    -- запись не удалась. Отказ, после которого значок остался на новом
-    -- месте, соврал бы: до перезапуска он там, после — нет.
+    -- Record a new place for an icon. The shell keeps the layout, so the
+    -- compositor does not write it itself but asks — and rolls the icon back if
+    -- the write failed. A refusal after which the icon stayed in its new place
+    -- would lie: until the restart it is there, after it — not.
     local move_item: any = type(options.move_desktop_item) == "function"
         and options.move_desktop_item or nil
 
@@ -345,16 +355,18 @@ local function run(options: any)
     local lifecycle = assert(process.events())
     local inbox = process.inbox()
 
-    -- Окна, собранные в рантайме, возвращаются в реестр здесь, а не фоновым
-    -- сервисом: платформа намеренно запрещает процессам в группе
-    -- `wippy.security:process` менять реестр, и такой сервис молча не сделал
-    -- бы ничего. Композитор работает под собственным актором, и права у него
-    -- свои — а нужны эти окна ровно тогда, когда десктоп запущен.
+    -- Windows built in the runtime are returned to the registry here rather
+    -- than by a background service: the platform deliberately forbids
+    -- processes in the group `wippy.security:process` to change the registry,
+    -- and such a service would silently do nothing. The compositor runs under
+    -- its own actor with its own permissions — and these windows are needed
+    -- exactly when the desktop is running.
     local log = logger:named("tui_desktop.desktop")
 
-    -- Итог восстановления держится в состоянии и отдаётся командным каналом:
-    -- лог терминального хоста заглушён (иначе он разъедет кадр), и отказ,
-    -- рассказанный только в лог, не расскажут никому.
+    -- The outcome of the restore is kept in state and given out through the
+    -- command channel: the terminal host's log is muted (otherwise it would
+    -- break the frame apart), and a refusal told only to the log is told to
+    -- nobody.
     local restore_report: any = {restored = 0, failed = 0, error = nil, names = {}}
 
     local stored: any = nil
@@ -392,9 +404,10 @@ local function run(options: any)
         synchronized_output = true,
     }))
 
-    -- Размера может не быть вовсе: запуск не из терминала (скрипт, CI,
-    -- пайп) отвечает нулями, и холст такую ширину отвергает — процесс падал
-    -- на первой же строке с «canvas width must be positive».
+    -- There may be no size at all: a start not from a terminal (a script, CI, a
+    -- pipe) answers with zeros, and the canvas rejects such a width — the
+    -- process crashed on the very first line with "canvas width must be
+    -- positive".
     local FALLBACK_W, FALLBACK_H = 80, 24
     local MIN_SCREEN_W, MIN_SCREEN_H = 8, 6
 
@@ -410,10 +423,11 @@ local function run(options: any)
     local width, height = screen_geometry()
     local canvas = tty.canvas(width, height)
 
-    -- Вход — до первого кадра стола и до того, как композитор начнёт читать
-    -- команды: окно, открытое каналом в этот момент, родилось бы без
-    -- личности. Диалог рисует оболочка на этом же холсте; композитор держит
-    -- размер экрана и показывает кадр — то же, что он делает для стола.
+    -- Logon comes before the first desktop frame and before the compositor
+    -- starts reading commands: a window opened through the channel at that
+    -- moment would be born without an identity. The shell draws the dialog on
+    -- this same canvas; the compositor keeps the screen size and presents the
+    -- frame — the same thing it does for the desktop.
     if logon then
         local screen: any = {
             events = events, pixels = PIXELS,
@@ -433,14 +447,15 @@ local function run(options: any)
             end
             return out:present(canvas:rows(), {images = images})
         end
-        -- Упавший диалог — отказ входа с причиной, а не композитор, оставивший
-        -- терминал в alternate screen без единого слова.
+        -- A crashed dialog is a logon refusal with a reason, not a compositor
+        -- that left the terminal in the alternate screen without a single
+        -- word.
         local ok, identity, why = pcall(logon, screen)
         if not ok then identity, why = nil, "the logon dialog crashed: " .. tostring(identity) end
         if type(identity) ~= "table" or identity.actor == nil or identity.scope == nil then
-            -- Отказ входа — это выход, а не стол под служебным актором: стол
-            -- без пользователя выглядел бы как вошедший, а окна в нём
-            -- работали бы от имени процесса.
+            -- A logon refusal means exit, not a desktop under the service
+            -- actor: a desktop without a user would look logged on, and the
+            -- windows in it would act on behalf of the process.
             process.registry.unregister(SERVICE_NAME)
             assert(tty.mouse(false))
             assert(out:close())
@@ -451,11 +466,11 @@ local function run(options: any)
             context = type(identity.context) == "table" and identity.context or {}}
     end
 
-    -- Первая и последняя строка, свободные под окна. Считаются по теме, а
-    -- не по константе: у одной полоса окон сверху, у другой панель задач
-    -- снизу.
-    -- math.floor, а не литерал: линтер различает integer и number, а дальше
-    -- эти границы уезжают в clamp, где ждут number.
+    -- The first and last rows free for windows. Computed from the theme, not
+    -- from a constant: one has a window bar at the top, another a taskbar at
+    -- the bottom. math.floor rather than a literal: the linter tells integer
+    -- from number, and further on these bounds go into clamp, which expects
+    -- number.
     local desktop_top = math.floor(2)
     local desktop_last = math.floor(height - 1)
 
@@ -466,8 +481,8 @@ local function run(options: any)
         local bottom = math.tointeger(tonumber(spec.bottom) or 1) or 1
         if top < 0 then top = 0 end
         if bottom < 0 then bottom = 0 end
-        -- Тема, попросившая больше экрана, чем есть, не должна ронять
-        -- композитор: окна уехали бы за край молча.
+        -- A theme that asked for more screen than there is must not bring the
+        -- compositor down: the windows would slide off the edge silently.
         if top + bottom >= height then
             top = 0
             if bottom >= height then bottom = math.tointeger(height - 1) or 0 end
@@ -480,11 +495,11 @@ local function run(options: any)
 
     apply_layout()
 
-    -- windows — z-порядок: последний рисуется поверх и держит фокус.
+    -- windows — the z-order: the last one is drawn on top and holds the focus.
     local windows = {}
     local next_id = 0
-    -- Перетаскивание: одна структура вместо «либо nil, либо таблица» —
-    -- во второй форме поля смещения для проверяющего не существуют.
+    -- Dragging: one structure instead of "either nil or a table" — in the
+    -- second form the offset fields do not exist for the checker.
     local drag: any = {active = false, id = "", mode = "move", dx = 0, dy = 0}
     -- The frame gate (`draw` / `draw_now` / `flush`): when the last frame was
     -- painted, whether one is owed, how many requests it merges, and the
@@ -494,37 +509,40 @@ local function run(options: any)
     -- Set when a frame could not be written: the terminal is gone (a remote
     -- session disconnected). The loop then shuts the desktop down.
     local terminal_state: any = {lost = nil, cancelled = false}
-    -- Меню открыто — весь ввод принадлежит ему, включая цифры: иначе выбор
-    -- пункта уехал бы в окно под меню.
+    -- While the menu is open all input belongs to it, digits included:
+    -- otherwise choosing an item would go to the window under the menu.
     local menu: any = nil
-    -- Разметка попаданий, которую вернула тема при последней отрисовке. И
-    -- рисование, и клик считаются по ней одной.
+    -- The hit layout the theme returned at the last paint. Both drawing and a
+    -- click are computed from it alone.
     local catalog: any
     local bar_hits: any = {}
     local desk_hits: any = {}
-    -- Ярлыки стола держатся в состоянии, а не читаются на каждый кадр:
-    -- кадр рисуется десятки раз в секунду, а раскладка меняется руками.
+    -- Desktop shortcuts are kept in state rather than read every frame: a frame
+    -- is drawn dozens of times a second, while the layout is changed by hand.
     local desk: any = {items = {}, failure = nil}
-    -- Двойной щелчок: как в оболочке, откуда взят вид. Одиночный щелчок,
-    -- запускающий программу, — ловушка: по значку кликают, чтобы выбрать.
+    -- Double click: as in the shell the look is taken from. A single click that
+    -- launches a program is a trap: people click an icon to select it.
     local last_click: any = {x = 0, y = 0, at = 0}
-    -- Выделение живёт здесь, а не в раскладке: его меняет каждый щелчок, а
-    -- раскладка — то, что переживает перезапуск.
+    -- The selection lives here, not in the layout: every click changes it, and
+    -- the layout is what survives a restart.
     local selected_id: any = nil
-    -- Причина последнего отказа. Показывается вместо статуса: у оболочки
-    -- терминала нет ни лога, ни всплывающих окон, и рассказать иначе негде.
+    -- The reason of the last refusal. Shown instead of the status: the terminal
+    -- shell has neither a log nor pop-up windows, and there is nowhere else to
+    -- tell it.
     local notice = ""
-    -- Что стоил последний кадр. Отдаётся командным каналом, потому что цену
-    -- нарезки хрома иначе не увидеть: неверно порезанный хром рисует
-    -- ПРАВИЛЬНЫЙ экран, просто медленный, а у медленного нет ни стека, ни
-    -- симптома — по ssh его не найти глазами.
+    -- What the last frame cost. Given out through the command channel,
+    -- because the cost of slicing the chrome cannot be seen otherwise:
+    -- wrongly sliced chrome draws a CORRECT screen, just a slow one, and a
+    -- slow one has neither a stack nor a symptom — over ssh it cannot be
+    -- found by eye.
     local frame_cost: any = {}
-    -- Сколько кадр стоил ВРЕМЕНЕМ и что его разбудил. Байты и строки выше
-    -- говорят, сколько ушло в терминал, но не где прошло время: в пересборке
-    -- канвы темой или в `present`. `trigger` пишет цикл, читает `draw`;
-    -- `samples` — кольцо последних FRAME_WINDOW кадров для avg/p95/max.
-    -- Таблицей, а не локальными: выше по кадру стоит pcall входа, а после
-    -- ошибки под pcall простая локальная у цикла и у замыкания расходится.
+    -- What the frame cost in TIME and what woke it. The bytes and rows above
+    -- say how much went to the terminal, but not where the time went: in the
+    -- theme rebuilding the canvas or in `present`. `trigger` is written by
+    -- the loop and read by `draw`; `samples` is a ring of the last
+    -- FRAME_WINDOW frames for avg/p95/max. A table rather than locals: higher
+    -- up in this frame sits the logon pcall, and after an error under pcall a
+    -- plain local diverges between the loop and a closure.
     local meter: any = {trigger = "start", snapshot_ms = nil, total = 0, next = 1, samples = {}}
     -- Which window was last told it has the keyboard. The composer keeps no
     -- focus field (focus is the top visible window, see `focused`), so a
@@ -534,18 +552,20 @@ local function run(options: any)
     local focus_seen: any = {id = nil}
     local notify_focus: any = nil
     local menu_hits: any = {}
-    -- Таймер наведения в меню: есть только пока каскад ждёт своей смены,
-    -- см. `hover_menu`. Объявлен здесь, потому что цикл кладёт его в select.
+    -- The menu hover timer: exists only while the cascade is waiting for its
+    -- change, see `hover_menu`. Declared here because the loop puts it into
+    -- select.
     local hover_timer: any = nil
     local clock = ""
-    -- Пункты трея в порядке появления. Таблицей, а не локальным списком: см.
-    -- `meter` — после ошибки под pcall присваивание локальной из замыкания
-    -- владелец больше не видит.
+    -- Tray items in the order they appeared. A table rather than a local list:
+    -- see `meter` — after an error under pcall the owner no longer sees an
+    -- assignment made to a local from a closure.
     local tray: any = {items = {}}
 
-    -- Что трей отдаёт теме и командному каналу. Теме — только то, что она
-    -- рисует и во что превращает попадание; наружу — ещё владелец и остаток
-    -- срока, без них «пункт висит» не объяснить.
+    -- What the tray gives the theme and the command channel. The theme gets
+    -- only what it draws and what it turns a hit into; outside also gets the
+    -- owner and the time left, without which "the item is stuck" cannot be
+    -- explained.
     local function tray_view(detailed: boolean): any
         local out = {}
         local now = time.now():unix_nano()
@@ -564,10 +584,10 @@ local function run(options: any)
         return out
     end
 
-    -- Пункт с истёкшим сроком снимается. Поставщик, переставший обновлять
-    -- свой пункт, скорее всего остановился, а подпись, пережившая его,
-    -- выдаёт старое значение за нынешнее — вид исправного трея, который врёт.
-    -- Отвечает, изменился ли трей: перерисовка нужна только тогда.
+    -- An expired item is removed. A provider that stopped updating its item has
+    -- most likely stopped, and a caption that outlived it passes an old value
+    -- off as the current one — the look of a working tray that lies.
+    -- Answers whether the tray changed: only then is a redraw needed.
     local function prune_tray(): boolean
         local now = time.now():unix_nano()
         local kept, changed = {}, false
@@ -579,14 +599,15 @@ local function run(options: any)
         return changed
     end
 
-    -- set_tray(body, from) -> принят, причина, изменился ли вид
+    -- set_tray(body, from) -> accepted, reason, whether the view changed
     --
-    -- Ключ выбирает поставщик: повторная команда с тем же ключом обновляет
-    -- пункт, а не добавляет второй. Владельцем пункт не запирается нарочно:
-    -- поставщик-сервис после перезапуска приходит с новым pid, и запертый
-    -- пункт висел бы мёртвым до конца срока рядом с новым. Подменить чужую
-    -- подпись может любой процесс, который и так может закрыть любое окно
-    -- командой `desktop.close`; `entry` пункта открывает то же, что меню.
+    -- The provider picks the key: a repeated command with the same key updates
+    -- the item rather than adding a second one. The item is deliberately not
+    -- locked to its owner: a service provider comes back after a restart with a
+    -- new pid, and a locked item would hang dead until the end of its term next
+    -- to the new one. Someone else's caption can be replaced by any process,
+    -- which can close any window with the `desktop.close` command anyway; an
+    -- item's `entry` opens the same thing the menu does.
     local function set_tray(body: any, from: any): (boolean, any, boolean)
         local key = type(body.key) == "string" and body.key or ""
         if key == "" then return false, "the tray item has no key", false end
@@ -646,9 +667,9 @@ local function run(options: any)
         end
         local old = tray.items[index]
         tray.items[index] = item
-        -- Продление срока без смены подписи кадра не стоит: поставщик
-        -- обновляет пункт по таймеру, и каждое такое обновление иначе было бы
-        -- полной перерисовкой панели.
+        -- Extending the term without changing the caption is not worth a
+        -- frame: the provider updates the item on a timer, and every such
+        -- update would otherwise be a full redraw of the panel.
         local changed = old.text ~= text or old.entry ~= entry or old.title ~= title
             or old.image ~= image or old.icon ~= icon
         return true, nil, changed or pruned
@@ -816,8 +837,9 @@ local function run(options: any)
     end
 
     local quitting = false
-    -- Экран прощания просят только через «Завершение работы» в меню: ctrl+q
-    -- — аварийный выход, ему пять секунд чёрного экрана ни к чему.
+    -- The farewell screen is asked for only through "Shut Down" in the menu:
+    -- ctrl+q is an emergency exit, it has no use for five seconds of black
+    -- screen.
     local farewell_wanted = false
 
     local function desktop_height() return math.max(1, desktop_last - desktop_top + 1) end
@@ -835,8 +857,9 @@ local function run(options: any)
         return windows[index]
     end
 
-    -- Фокус — верхнее развёрнутое окно. Отдельного поля нет нарочно: два
-    -- источника истины про фокус разъезжаются на первом же закрытии.
+    -- The focus is the top window that is not minimised. There is
+    -- deliberately no separate field: two sources of truth about the focus
+    -- drift apart at the very first close.
     local function focused()
         for index = #windows, 1, -1 do
             if not windows[index].minimized and not windows[index].closing then
@@ -846,10 +869,11 @@ local function run(options: any)
         return nil
     end
 
-    -- Окно, которому принадлежит этот процесс. Родителя диалога композитор
-    -- определяет по ОТПРАВИТЕЛЮ, а не по номеру в запросе: своего номера окно
-    -- не знает, а присланный в поле чужой номер ничем не проверить — и связь
-    -- можно было бы объявить о любом окне на столе.
+    -- The window this process belongs to. The compositor determines a dialog's
+    -- parent by the SENDER, not by a number in the request: a window does not
+    -- know its own number, and a foreign number sent in a field cannot be
+    -- checked in any way — a link could then be declared to any window on the
+    -- desktop.
     local function window_of(from: any)
         if from == nil then return nil end
         local key = tostring(from)
@@ -859,10 +883,10 @@ local function run(options: any)
         return nil
     end
 
-    -- Диалог и служебное окно живут ПРИ своём окне: закрываются вместе с ним
-    -- и держатся поверх него. Обычная программа, открытая из другого окна, —
-    -- просто программа: уходить ей следом незачем, и «Мой компьютер», открывший
-    -- просмотрщик, не должен уносить его с собой.
+    -- A dialog and a tool window live WITH their window: they close together
+    -- with it and stay on top of it. An ordinary program opened from another
+    -- window is just a program: it has no reason to leave along with it, and
+    -- "My Computer", having opened a viewer, must not take it away with it.
     local function follows_parent(window: any)
         local kind: any = window and window.window_type or nil
         return kind == "dialog" or kind == "tool"
@@ -884,19 +908,20 @@ local function run(options: any)
             table.remove(windows, index)
             windows[#windows + 1] = window
         end
-        -- Диалог держится поверх своего окна. Уехав под него, он выглядит
-        -- пропавшим — а достать его нечем: модальности здесь нет намеренно,
-        -- ввод остальных окон не блокируется.
+        -- A dialog stays on top of its window. Gone under it, it looks lost —
+        -- and there is nothing to get it back with: there is deliberately no
+        -- modality here, the input of the other windows is not blocked.
         for _, child in ipairs(children_of(window.id)) do raise(child) end
     end
 
-    -- Объявлено заранее: укладка считает сетку значков, а сетка известна
-    -- ниже. Забыть вызвать её после перечитывания нельзя — тогда значок без
-    -- координат не нарисуется вовсе.
+    -- Declared in advance: the arranging computes the icon grid, and the grid
+    -- is known below. Calling it after a reread must not be forgotten — an
+    -- icon without coordinates is then not drawn at all.
     local arrange_desktop: any
 
-    -- Раскладка перечитывается по команде, а не по таймеру: её меняют
-    -- ручки оболочки, и они же говорят композитору, что пора обновиться.
+    -- The layout is reread on command, not on a timer: it is changed by the
+    -- shell's endpoints, and they are also what tell the compositor it is time
+    -- to refresh.
     local function reload_desktop()
         if not read_desktop then
             desk = {items = {}, failure = nil}
@@ -910,9 +935,10 @@ local function run(options: any)
         arrange_desktop()
     end
 
-    -- Шаг сетки значков объявляет тема: она рисует значок и знает, сколько
-    -- он занимает. Композитор только выравнивает по нему брошенный значок —
-    -- иначе значок встаёт между шагами и перекрывается попаданием соседа.
+    -- The icon grid step is declared by the theme: it draws the icon and knows
+    -- how much room it takes. The compositor only aligns a dropped icon to it —
+    -- otherwise the icon lands between steps and is covered by a neighbour's
+    -- hit.
     local function icon_grid()
         local grid: any = nil
         if type(chrome.icon_grid) == "function" then grid = chrome.icon_grid() end
@@ -939,15 +965,16 @@ local function run(options: any)
         return origin + cell * size
     end
 
-    -- Значок без координат ставит композитор: ширину экрана знает только
-    -- он, а раскладку оболочка составляет раньше, чем терминал сообщил
-    -- размер. Вычисленное место НЕ записывается обратно — иначе первый же
-    -- кадр превратил бы автопосаженный значок в поставленный руками, и
-    -- человек потерял бы разницу, ради которой это сделано.
+    -- An icon without coordinates is placed by the compositor: only it knows
+    -- the screen width, while the shell composes the layout before the
+    -- terminal has reported its size. The computed place is NOT written back
+    -- — otherwise the very first frame would turn an auto-placed icon into a
+    -- hand-placed one, and the person would lose the difference this is done
+    -- for.
     --
-    -- Мест не хватило — значок ложится в последнюю ячейку поверх соседа.
-    -- Значки внахлёст видно и можно растащить; пропавший за краем читается
-    -- как «я его случайно удалил».
+    -- Not enough places — the icon goes to the last cell on top of a
+    -- neighbour. Overlapping icons are visible and can be pulled apart; one
+    -- lost beyond the edge reads as "I deleted it by accident".
     arrange_desktop = function()
         local gw, gh, gl = icon_grid()
 
@@ -999,12 +1026,13 @@ local function run(options: any)
         return nil
     end
 
-    -- Содержимое окна в пиксельном режиме кладёт КОМПОЗИТОР.
+    -- In pixel mode the window content is laid by the COMPOSITOR.
     --
-    -- В режиме символов строки окна кладёт тема — она же рисует вокруг них
-    -- рамку одним куском. Растровая тема рамку рисует картинками и в канву не
-    -- пишет вовсе; строки при этом остаются символами (bash умеет только их),
-    -- и положить их больше некому.
+    -- In character mode the window's rows are laid by the theme — it also
+    -- draws the frame around them in one piece. A raster theme draws the
+    -- frame with pictures and does not write to the canvas at all; the rows
+    -- remain characters meanwhile (bash can only do those), and there is
+    -- nobody else to lay them.
     local function put_content(window)
         if type(window.rows) ~= "table" or #window.rows == 0 then return end
         local left = math.tointeger(insets.left) or 1
@@ -1015,10 +1043,10 @@ local function run(options: any)
         local room = (math.tointeger(window.h) or 0) - FRAME_H
         if span < 1 or room < 1 then return end
 
-        -- Лишние строки режутся здесь, как и в теме символов: в момент смены
-        -- размера приезжает кадр прежней геометрии, и лишняя строка легла бы
-        -- ниже окна — на экране это читается как сломанная рамка, а не как
-        -- отставший кадр.
+        -- Extra rows are cut here, as in the character theme: at the moment
+        -- of a size change a frame of the previous geometry arrives, and an
+        -- extra row would land below the window — on screen that reads as a
+        -- broken window frame, not as a late frame.
         local rows: any = window.rows
         if #rows > room then
             local cut = {}
@@ -1052,9 +1080,10 @@ local function run(options: any)
         meter.next = meter.next % FRAME_WINDOW + 1
     end
 
-    -- Цена кадров для статуса: последний кадр как был, плюс сводка по кольцу.
-    -- Перцентиль считается здесь, по запросу: кадров под потоком вывода —
-    -- десятки в секунду, а статус спрашивают раз в несколько секунд.
+    -- The frame cost for the status: the last frame as it was, plus a summary
+    -- over the ring. The percentile is computed here, on request: under a
+    -- stream of output frames come dozens per second, while the status is
+    -- asked for once every few seconds.
     local function frame_report(with_samples)
         local report: any = {}
         for key, value in pairs(frame_cost) do report[key] = value end
@@ -1062,9 +1091,10 @@ local function run(options: any)
         local samples: any = meter.samples
         local count = #samples
         if with_samples then
-            -- Сырые кадры, от старого к новому. Замер по фазам склеивает их по
-            -- `seq` из соседних снимков: сводка кольца на конце короткой фазы
-            -- смешала бы её с кадрами предыдущей.
+            -- Raw frames, oldest to newest. A per-phase measurement stitches
+            -- them together by `seq` from neighbouring snapshots: the ring's
+            -- summary at the end of a short phase would mix it with the
+            -- frames of the previous one.
             local raw = {}
             for offset = 0, count - 1 do
                 local sample = samples[(meter.next - 1 + offset) % count + 1]
@@ -1101,7 +1131,8 @@ local function run(options: any)
             if newest == nil or sample.at > newest then newest = sample.at end
             bytes_sum = bytes_sum + sample.bytes
             if sample.bytes > bytes_max then bytes_max = sample.bytes end
-            -- По виду, без окна: «pty:w3» и «pty:w4» — один вопрос.
+            -- By kind, without the window: "pty:w3" and "pty:w4" are one
+            -- question.
             local kind = tostring(sample.trigger):match("^[^:]+") or "?"
             triggers[kind] = (triggers[kind] or 0) + 1
         end
@@ -1144,8 +1175,8 @@ local function run(options: any)
         canvas:clear(" ")
 
         local top = focused()
-        -- Считается до ветвления по `top`: после if/else линтер держит его
-        -- сужённым и поле `id` для него уже не существует.
+        -- Computed before branching on `top`: after the if/else the linter
+        -- keeps it narrowed, and the `id` field no longer exists for it.
         local focused_id = top and top.id or nil
         -- One list for both modes and every call of the frame: `fill` and
         -- `paint` must see the same widgets in the same order.
@@ -1153,9 +1184,10 @@ local function run(options: any)
 
         desk_hits = {}
         if not PIXELS then
-            -- Фон рисует и значки стола, если тема умеет: композитор отдаёт ей
-            -- раскладку и границы свободного места, а обратно берёт разметку
-            -- попаданий — по ней же считается щелчок.
+            -- The background also draws the desktop icons, if the theme can:
+            -- the compositor gives it the layout and the bounds of the free
+            -- space, and takes back the hit layout — the click is computed
+            -- from it as well.
             local painted = chrome.fill(canvas, width, height, {
                 top = desktop_top,
                 bottom = desktop_last,
@@ -1176,11 +1208,13 @@ local function run(options: any)
                 end
             end
         else
-            -- Фон и стол заливаются ЯЧЕЙКАМИ и в этом режиме тоже. Без этого
-            -- тело окна просвечивает столом там, где программа внутри ничего
-            -- не написала: в режиме символов фон закрашивал `chrome.window`, а
-            -- растровая тема в канву не пишет вовсе. И сам стол держался бы не
-            -- на своём цвете, а на цвете терминала.
+            -- The background and the desktop are filled with CELLS in this
+            -- mode too. Without that the window body shows the desktop
+            -- through wherever the program inside has written nothing: in
+            -- character mode the background was painted by `chrome.window`,
+            -- while a raster theme does not write to the canvas at all. And
+            -- the desktop itself would sit not on its own colour but on the
+            -- terminal's.
             if type(chrome.fill) == "function" then
                 local filled = chrome.fill(canvas, width, height, {
                     top = desktop_top,
@@ -1209,9 +1243,10 @@ local function run(options: any)
         -- `status` stays for older themes and carries the same text.
         local status = notice
 
-        -- Состояние для растровой темы — объединение того, что в режиме
-        -- символов приезжает тремя вызовами. Имена полей те же нарочно: тема,
-        -- умеющая оба режима, узнаёт их без перевода.
+        -- The state for a raster theme is the union of what arrives in
+        -- character mode through three calls. The field names are the same on
+        -- purpose: a theme that can do both modes recognises them without
+        -- translation.
         local images: any = nil
         if PIXELS then
             local painted = chrome.paint({
@@ -1230,46 +1265,50 @@ local function run(options: any)
             }, cell_w, cell_h)
 
             local complaints
-            -- Пробелы под картинками кладёт `frame`, и делает это ПОСЛЕ
-            -- содержимого: иначе строка окна вылезла бы из-под чужой рамки.
+            -- The blanks under the pictures are laid by `frame`, and it does
+            -- that AFTER the content: otherwise a window's row would stick
+            -- out from under another window's frame.
             images, complaints = pixels.frame(canvas, painted)
             local hits, quarrel = pixels.hits(painted)
             bar_hits, menu_hits = hits.bars, hits.menu
-            -- Значки стола рисует `paint`, поэтому его разметка старше. Но
-            -- если он её не вернул, остаётся та, что вернула заливка: молча
-            -- потерянные щелчки по столу выглядят как мёртвые значки.
+            -- The desktop icons are drawn by `paint`, so its layout takes
+            -- precedence. But if it did not return one, the one the fill
+            -- returned stays: silently lost clicks on the desktop look like
+            -- dead icons.
             if #hits.desktop > 0 then desk_hits = hits.desktop end
             if quarrel then complaints[#complaints + 1] = quarrel end
             for _, complaint in ipairs(complaints) do
                 log:warn("the theme returned a bad frame", {reason = complaint})
             end
-            -- И в строку состояния тоже. Лог терминального хоста заглушён —
-            -- иначе он разъедет кадр, — а значит жалоба, рассказанная только
-            -- ему, не рассказана никому: на стенде это выглядит как «мышь не
-            -- работает», а не как «тема отдала попадания не в той форме».
+            -- And into the status line as well. The terminal host's log is
+            -- muted — otherwise it would break the frame apart — so a
+            -- complaint told only to it is told to nobody: on the stand this
+            -- looks like "the mouse does not work", not like "the theme
+            -- returned hits in the wrong shape".
             if #complaints > 0 then notice = tostring(complaints[1]) end
         else
             bar_hits = chrome.bars(canvas, width, height, {
                 windows = windows,
                 focused_id = focused_id,
-                -- «Пуск» нажат, пока открыт его каскад; контекстное меню
-                -- значка (с якорем) — не его.
+                -- "Start" is pressed while its cascade is open; an icon's
+                -- context menu (with an anchor) is not Start's.
                 menu_open = menu ~= nil and menu.anchor == nil,
                 status = status,
                 notice = notice,
                 clock = clock,
-                -- Трей стоит у часов. Тема без него его просто не рисует:
-                -- поле необязательное, как и сами часы.
+                -- The tray stands by the clock. A theme without it simply
+                -- does not draw it: the field is optional, as the clock
+                -- itself is.
                 tray = tray_view(false),
             })
             if type(bar_hits) ~= "table" then bar_hits = {} end
 
             menu_hits = {}
             if menu then
-                -- Курсор отдаётся теме, а не считается ею: она помечает
-                -- выбранную строку в разметке, и та же разметка возвращается
-                -- сюда. Так «что выбрано» существует в одном месте — в том,
-                -- что нарисовано.
+                -- The cursor is handed to the theme rather than computed by
+                -- it: the theme marks the selected row in the hit layout, and
+                -- that same layout comes back here. So "what is selected"
+                -- exists in one place — in what is drawn.
                 local hits = chrome.menu(canvas, width, height, menu.items, menu.failure,
                     menu.open, menu.cursor, menu.anchor)
                 if type(hits) == "table" then menu_hits = hits end
@@ -1282,9 +1321,9 @@ local function run(options: any)
             end
         end
 
-        -- Аппаратный курсор один на экран, поэтому его получает только
-        -- фокусное окно — и со смещением на свою рамку, иначе он встанет
-        -- строкой выше собственного текста.
+        -- There is one hardware cursor per screen, so only the focused window
+        -- gets it — and offset by its frame, otherwise it would stand a row
+        -- above its own text.
         local cursor = nil
         if top and top.cursor then
             cursor = {
@@ -1310,18 +1349,20 @@ local function run(options: any)
         frame_cost = {
             changed_rows = stats.changed_rows,
             bytes_written = stats.bytes_written,
-            -- Сколько растров ушло на самом деле, в отличие от того, сколько
-            -- кадр объявил. Рантайм, который этого не считает, оставит поле
-            -- пустым — и «не измеряли» не притворится нулём.
+            -- How many rasters actually went out, as opposed to how many the
+            -- frame declared. A runtime that does not count this leaves the
+            -- field empty — and "not measured" will not pretend to be zero.
             placements_sent = stats.placements_sent,
             images = images and #images or 0,
-            -- paint — канва и тема (fill/window/bars/menu или paint+frame),
-            -- present — диффер поверхности и кодирование растров.
+            -- paint — the canvas and the theme (fill/window/bars/menu or
+            -- paint+frame), present — the surface differ and the raster
+            -- encoding.
             paint_ms = round_ms((painted_at - started) / 1000000),
             present_ms = round_ms((presented_at - painted_at) / 1000000),
             total_ms = round_ms((presented_at - started) / 1000000),
             trigger = meter.trigger,
-            -- Только у кадра окна: снимок его viewport до `draw`.
+            -- Only a window's frame has it: its viewport snapshot before
+            -- `draw`.
             snapshot_ms = meter.snapshot_ms,
         }
         record_frame(frame_cost, presented_at)
@@ -1362,8 +1403,9 @@ local function run(options: any)
         meter.trigger = was
     end
 
-    -- open_window(spec, from) — `from` это отправитель команды. Если он
-    -- оказался одним из окон, открытое запоминает, кем открыто.
+    -- open_window(spec, from) — `from` is the sender of the command. If it
+    -- turned out to be one of the windows, the opened one remembers who opened
+    -- it.
     local function open_window(spec, from: any)
         spec = type(spec) == "table" and spec or {}
 
@@ -1371,7 +1413,8 @@ local function run(options: any)
 
         local opener = window_of(from)
 
-        -- Тип нужен раньше геометрии: диалог встаёт не там, где обычное окно.
+        -- The type is needed before the geometry: a dialog is placed
+        -- differently from an ordinary window.
         local record: any = registry.get(entry)
         local declared: any = nil
         local window_type = programs.DEFAULT_TYPE
@@ -1404,25 +1447,27 @@ local function run(options: any)
             end
         end
 
-        -- Размер: у окна с фиксированным размером — ТОЛЬКО из записи, что бы
-        -- ни просил открывающий; иначе часы, открытые с панели задач без
-        -- размера, встали бы во весь стол с диалогом в углу. У остальных —
-        -- просьба открывающего, потом запись, потом умолчание композитора.
+        -- Size: for a fixed-size window — ONLY from the entry, whatever the
+        -- opener asks for; otherwise a clock opened from the taskbar without
+        -- a size would take the whole desktop with the dialog in a corner.
+        -- For the others — the opener's request, then the entry, then the
+        -- compositor's default.
         local declared_w = declared and tonumber(declared.w) or nil
         local declared_h = declared and tonumber(declared.h) or nil
         local fixed = declared ~= nil and declared.resizable == false
         local w = clamp((fixed and declared_w) or spec.w or declared_w or math.floor(width * 0.6), MIN_W, width)
         local h = clamp((fixed and declared_h) or spec.h or declared_h or math.floor(desktop_height() * 0.7),
             MIN_H, desktop_height())
-        -- Каскад, чтобы новое окно не легло ровно на предыдущее и не
-        -- выглядело как отсутствие результата.
+        -- Cascade, so that a new window does not lie exactly over the
+        -- previous one and look like no result.
         local step = (#windows % 6) * 2
         local x = clamp(spec.x or (2 + step), 1, math.max(1, width - w + 1))
         local y = clamp(spec.y or (desktop_top + step), desktop_top, math.max(desktop_top, height - h))
 
-        -- Диалог своего окна встаёт по его центру, а не в общий каскад: искать
-        -- глазами по всему столу окно, которое открыл сам, — работа, которой
-        -- не должно быть. Явные координаты сильнее: их назвал тот, кто просил.
+        -- A dialog of its own window is centred on it rather than put into
+        -- the common cascade: searching the whole desktop by eye for a window
+        -- you opened yourself is work that should not exist. Explicit
+        -- coordinates win: they were named by whoever asked.
         if opener and spec.x == nil and spec.y == nil
             and (window_type == "dialog" or window_type == "tool") then
             local ox = math.tointeger(opener.x) or 1
@@ -1433,10 +1478,11 @@ local function run(options: any)
             y = clamp(oy + (oh - h) // 2, desktop_top, math.max(desktop_top, height - h))
         end
 
-        -- Окно-вид: процесса внутри нет вовсе. Рисует его тема, зовя чистую
-        -- библиотеку `render`; данные добывает отдельный процесс-поставщик со
-        -- своим узким актором. Композитор ни того, ни другого не исполняет —
-        -- он несёт состояние от поставщика к теме.
+        -- A view window: there is no process inside at all. The theme draws
+        -- it by calling the pure library `render`; the data is obtained by a
+        -- separate provider process with its own narrow actor. The compositor
+        -- executes neither — it carries the state from the provider to the
+        -- theme.
         local content = declared and declared.content or programs.DEFAULT_CONTENT
         local render_ref = declared and declared.render or nil
         local state_ref = declared and declared.state or nil
@@ -1472,8 +1518,8 @@ local function run(options: any)
                 image = spec.image or (declared and declared.image),
                 state_ref = state_ref,
                 resizable = declared == nil or declared.resizable ~= false,
-                -- Состояния ещё нет: вид рисуется пустым и ГОВОРИТ, что ждёт,
-                -- а не показывает вчерашнее и не висит.
+                -- No state yet: the view is drawn empty and SAYS that it is
+                -- waiting, rather than showing yesterday's state or hanging.
                 waiting = state_ref ~= nil,
                 state_revision = 0,
                 -- As for a process window: `desktop.list` reports it.
@@ -1487,11 +1533,12 @@ local function run(options: any)
             }
 
             if state_ref then
-                -- Поставщик получает имя композитора и номер окна: обратно он
-                -- шлёт состояние сам, когда оно изменилось. Спрашивать его на
-                -- каждый кадр значило бы читать реестр шестьдесят раз в
-                -- секунду ради списка, который меняется раз в час, — и ждать
-                -- чужой процесс, пока стоит весь стол.
+                -- The provider gets the compositor's name and the window
+                -- number: it sends the state back itself when it has changed.
+                -- Asking it every frame would mean reading the registry sixty
+                -- times a second for a list that changes once an hour — and
+                -- waiting for another process while the whole desktop stands
+                -- still.
                 -- Args retain their position; geometry is a separate fourth argument.
                 local state_pid, serr = spawner(nil, {[window_api.CONTEXT_KEY] = SERVICE_NAME})
                     :spawn_monitored(tostring(state_ref), WINDOW_HOST, SERVICE_NAME, tostring(view_window.id),
@@ -1522,16 +1569,18 @@ local function run(options: any)
         local command = type(spec.command) == "string" and spec.command ~= ""
             and spec.command or DEFAULT_COMMAND
 
-        -- Окно-приложение получает свой параметр (`args`), окно с программой —
-        -- команду. Одно поле на оба смысла читалось бы как «команда», и окно
-        -- подробностей открывали бы строкой «/bin/bash».
+        -- An application window gets its parameter (`args`), a program window
+        -- gets a command. One field for both meanings would read as
+        -- "command", and a details window would be opened with the string
+        -- "/bin/bash".
         local argument = type(spec.args) == "string" and spec.args ~= ""
             and spec.args or (entry == PTY_WINDOW and command or nil)
 
-        -- Имя композитора едет окну в контексте процесса: под второй
-        -- оболочкой десктоп зарегистрирован своим именем, и окно, знающее
-        -- только константу, обращалось бы к чужому процессу — молча, потому
-        -- что `desktop.open` ответа не ждёт.
+        -- The compositor's name travels to the window in the process context:
+        -- under a second shell the desktop is registered under its own name,
+        -- and a window that knows only the constant would address another
+        -- process — silently, because `desktop.open` does not wait for a
+        -- reply.
         local pid, perr = spawner(process.with_options({terminal = grant}), {[window_api.CONTEXT_KEY] = SERVICE_NAME})
             :spawn_monitored(entry, WINDOW_HOST, argument)
         if not pid then
@@ -1543,17 +1592,18 @@ local function run(options: any)
         local window = {
             id = "w" .. next_id,
             entry = entry,
-            -- Тема выбирает по нему состав кнопок заголовка; композитор
-            -- только несёт его от записи до темы.
+            -- The theme picks the set of title buttons by it; the compositor
+            -- only carries it from the entry to the theme.
             window_type = window_type,
-            -- Кем открыто. Для диалога и служебного окна это его окно —
-            -- отсюда и общий z, и общее закрытие. Для обычной программы это
-            -- просто след: кто её запустил.
+            -- Who opened it. For a dialog and a tool window this is its
+            -- window — hence the shared z and the shared close. For an
+            -- ordinary program it is just a trace: who launched it.
             opened_by = opener and opener.id or nil,
             content = content,
             image = spec.image or (declared and declared.image),
-            -- Запись сказала «размер фиксирован» — окно не тянется за угол и
-            -- не разворачивается; тема по этому же полю убирает кнопку.
+            -- The entry said "fixed size" — the window is not dragged by its
+            -- corner and not maximised; the theme removes the button by this
+            -- same field.
             resizable = declared == nil or declared.resizable ~= false,
             title = type(spec.title) == "string" and spec.title ~= "" and spec.title
                 or (entry == PTY_WINDOW and command or (declared and declared.title or entry)),
@@ -1575,15 +1625,15 @@ local function run(options: any)
         return window, nil
     end
 
-    -- Объявлено заранее: закрытие вида зовёт `forget` сразу (процесса, чья
-    -- смерть позвала бы его сама, у вида нет), а `forget` в свою очередь
-    -- закрывает диалоги. Без этой строки `forget` внутри `close_window` — это
-    -- глобальная переменная, то есть nil, и композитор падает ровно там, где
-    -- закрывают окно-вид.
+    -- Declared in advance: closing a view calls `forget` at once (a view has
+    -- no process whose death would call it on its own), and `forget` in turn
+    -- closes the dialogs. Without this line `forget` inside `close_window` is
+    -- a global variable, that is nil, and the compositor crashes exactly
+    -- where a view window is closed.
     local forget: any
 
-    -- Закрытие: сначала вежливо, потом по сроку. Окно, ещё не позвавшее
-    -- tty.start(), ввод не принимает — его гасим сразу.
+    -- Closing: politely first, then by the deadline. A window that has not yet
+    -- called tty.start() does not take input — it is killed at once.
     -- `how` is "request" (the default: the ×, ctrl+w, a plain `desktop.close`)
     -- or "force" (shutdown, `desktop.close{force = true}`). A request sends
     -- `close` and waits: the window may refuse — Notepad asks to save a
@@ -1600,14 +1650,15 @@ local function run(options: any)
         end
         window.closing = true
         window.close_how = mode
-        -- Диалог без своего окна — сирота: он объявлен принадлежащим номеру,
-        -- которого больше нет, и на столе остаётся предмет, о котором никто
-        -- не помнит, откуда он.
+        -- A dialog without its window is an orphan: it is declared as
+        -- belonging to a number that no longer exists, and an object stays on
+        -- the desktop whose origin nobody remembers.
         --
-        -- Каскад здесь и в `forget` — не дубль: этот закрывает диалоги СРАЗУ,
-        -- а тот ловит окно, умершее само. Без здешнего диалог висел бы на
-        -- столе всё время вежливого срока — до трёх секунд после того, как
-        -- его окно попросили закрыться.
+        -- The cascade here and in `forget` is not a duplicate: this one
+        -- closes the dialogs AT ONCE, while that one catches a window that
+        -- died on its own. Without this one a dialog would hang on the
+        -- desktop for the whole polite grace — up to three seconds after its
+        -- window was asked to close.
         for _, child in ipairs(children_of(window.id)) do close_window(child, mode) end
 
         -- Both transports receive close and the same grace period for cleanup.
@@ -1632,8 +1683,9 @@ local function run(options: any)
         local index = index_of(window.id)
         if index > 0 then table.remove(windows, index) end
         if window.view then window.view:close() end
-        -- Окно могло умереть само, не дождавшись вежливого закрытия: его
-        -- диалоги остались бы на столе привязанными к номеру, которого нет.
+        -- The window may have died on its own without waiting for the polite
+        -- close: its dialogs would stay on the desktop tied to a number that
+        -- does not exist.
         -- A dialog of a window that is gone may not refuse: force.
         for _, child in ipairs(children_of(window.id)) do close_window(child, "force") end
     end
@@ -1683,13 +1735,13 @@ local function run(options: any)
         else notice = "could not open: " .. tostring(err) end
     end
 
-    -- Контекстное меню значка стола: «Открыть» — то же, что двойной щелчок,
-    -- и «Свойства», если программа объявила окно свойств (`meta.properties`
-    -- у записи — его тема кладёт в попадание значка). Пункты — те же
-    -- таблицы, что у каталога «Пуска», поэтому их открывает тот же
-    -- `activate_menu_item`, а ходит по ним та же клавиатура и то же
-    -- наведение. Подпись пункта — `label`; `title` остаётся заголовком
-    -- окна, которое пункт открывает.
+    -- The context menu of a desktop icon: "Open" — the same as a double click,
+    -- and "Properties" if the program declared a properties window
+    -- (`meta.properties` on the entry — the theme puts it into the icon's hit).
+    -- The items are the same tables as in the "Start" catalog, so they are
+    -- opened by the same `activate_menu_item` and walked by the same keyboard
+    -- and the same hover. An item's caption is `label`; `title` stays the title
+    -- of the window the item opens.
     local function context_items(spot: any): any
         local items = {}
         if type(spot.entry) == "string" and spot.entry ~= "" then
@@ -1717,8 +1769,8 @@ local function run(options: any)
     local function resize_window(window, w: any, h: any)
         local rect = resized_rect(window, w, h)
         window.w, window.h, window.x, window.y = rect.w, rect.h, rect.x, rect.y
-        -- У вида viewport'а нет: его размер — это просто числа, по которым
-        -- тема рисует в следующем кадре.
+        -- A view has no viewport: its size is just numbers the theme draws by
+        -- in the next frame.
         if window.view then
             window.view:resize(window.w - FRAME_W, window.h - FRAME_H)
         elseif window.state_pid then
@@ -1730,10 +1782,10 @@ local function run(options: any)
     end
 
     local function toggle_maximize(window)
-        -- Окно с фиксированным размером не разворачивается: его раскладка
-        -- посчитана под один размер, и во весь экран оно показало бы серое
-        -- поле вокруг кнопок. Тема кнопку не рисует; alt+клавиша и команда
-        -- снаружи упираются сюда же, чтобы обходного пути не было.
+        -- A fixed-size window is not maximised: its layout is computed for one
+        -- size, and on the full screen it would show a grey field around the
+        -- buttons. The theme does not draw the button; an alt key and a command
+        -- from outside run into this same check, so there is no way around it.
         if window.resizable == false then return end
         if window.maximized then
             local saved = window.saved
@@ -1752,10 +1804,10 @@ local function run(options: any)
     local function send_to(window: any, event)
         if not window or not window.ready or window.closing then return false end
 
-        -- Ввод в окно-вид уходит его поставщику состояния: живой части у
-        -- такого окна больше нет, а вид — чистая функция и щелчок принять не
-        -- может. Что делать с ним — решает поставщик и отвечает новым
-        -- состоянием.
+        -- Input to a view window goes to its state provider: such a window no
+        -- longer has a live part, and the view is a pure function that cannot
+        -- take a click. What to do with it is decided by the provider, which
+        -- answers with a new state.
         if window.content == "pixels" then
             if not window.state_pid then return false end
             local sent = process.send(tostring(window.state_pid), "window.input",
@@ -1792,7 +1844,7 @@ local function run(options: any)
         if top and send_to(top, {type = "focus", focused = true}) then focus_seen.id = now end
     end
 
-    -- ─── ввод ────────────────────────────────────────────────────────────
+    -- ─── input ───────────────────────────────────────────────────────────
 
     local function hit(x, y)
         for index = #windows, 1, -1 do
@@ -1806,16 +1858,16 @@ local function run(options: any)
         return nil
     end
 
-    -- Кнопка под точкой заголовка. Считает тема: только она знает строку
-    -- заголовка, толщину рамки и состав кнопок — три числа, которые здесь
-    -- пришлось бы повторить. Повторение уже стоило дефекта: заголовок
-    -- переехал внутрь рамки, а проверка осталась на верхней грани, и по
-    -- кнопкам перестало попадать вовсе.
+    -- The button under a point of the title. The theme computes it: only it
+    -- knows the title row, the frame thickness and the set of buttons — three
+    -- numbers that would have to be repeated here. The repetition has already
+    -- cost a defect: the title moved inside the frame, the check stayed on the
+    -- top edge, and the buttons stopped being hit at all.
     local function title_button_at(window, x, y)
         if type(chrome.title_button_at) == "function" then
             return chrome.title_button_at(window, x, y)
         end
-        -- Запасной путь для темы, которая хит-теста не считает.
+        -- Fallback for a theme that does not compute the hit test.
         local step = math.tointeger(tonumber(chrome.BUTTON_STEP) or 3) or 3
         local span = math.tointeger(tonumber(chrome.BUTTONS_WIDTH) or 9) or 9
         if step < 1 then step = 1 end
@@ -1823,9 +1875,9 @@ local function run(options: any)
         local from = window.x + window.w - 1 - span
         if x < from or x > from + span - 1 then return nil end
         local slot = math.tointeger((x - from) // step) or 0
-        -- Тема без таблицы кнопок — не повод падать: до этой ветки доходит
-        -- только та, что не считает хит-тест сама, и промах по кнопке дешевле
-        -- погасшего стола.
+        -- A theme without a button table is no reason to crash: only one that
+        -- does not compute the hit test itself reaches this branch, and a
+        -- missed button is cheaper than a blacked-out desktop.
         local set: any = chrome.BUTTONS
         local button: any = type(set) == "table" and set[slot + 1] or nil
         return button and button.id or nil
@@ -1862,15 +1914,15 @@ local function run(options: any)
             window.motion_cell = cell
         end
     end
-    -- Наведение в открытом меню. Строка под мышью становится выбранной сразу,
-    -- а каскад — папка раскрывается, подменю глубже строки закрывается — через
-    -- HOVER_DELAY: «иду в подменю» и «ушёл на соседнюю строку» в первом
-    -- событии движения одинаковы и различаются только тем, где мышь окажется
-    -- через мгновение.
+    -- Hovering in an open menu. The row under the mouse becomes selected at
+    -- once, while the cascade — a folder opens, a submenu deeper than the row
+    -- closes — waits HOVER_DELAY: "going to the submenu" and "moved to the
+    -- neighbouring row" are the same in the first motion event and differ
+    -- only in where the mouse will be a moment later.
     --
-    -- Курсор живёт на самом глубоком раскрытом уровне — так же, как у
-    -- стрелок. Поэтому папка, которая уже раскрыта, курсора не берёт: выбор
-    -- идёт в её панели, а сама она нарисована раскрытой.
+    -- The cursor lives on the deepest open level — the same as with the
+    -- arrows. So a folder that is already open does not take the cursor: the
+    -- choice goes on in its panel, and the folder itself is drawn open.
     local function menu_spot_at(x, y)
         for _, spot in ipairs(menu_hits) do
             if spot.slot ~= nil and y >= spot.row and y <= (spot.bottom_row or spot.row)
@@ -1896,8 +1948,8 @@ local function run(options: any)
         local level = math.tointeger(spot.level) or 1
         local open: any = type(menu.open) == "table" and menu.open or {}
         local folder = type(spot.open) == "table"
-        -- Что должно быть раскрыто, пока мышь над этой строкой: папка — она
-        -- сама, пункт — всё до его уровня.
+        -- What must be open while the mouse is over this row: for a folder —
+        -- the folder itself, for an item — everything up to its level.
         local wanted: any = {}
         if folder then
             wanted = spot.open
@@ -1916,8 +1968,9 @@ local function run(options: any)
         end
         local pending: any = menu.pending
         if pending and same_path(pending.open, wanted) then return end
-        -- Папка, раскрытая наведением, в подменю ничего не выбирает: курсор
-        -- 0 — «строки нет», enter на нём молчит, стрелка вниз ведёт на первую.
+        -- A folder opened by hovering selects nothing in the submenu: cursor
+        -- 0 is "no row", enter on it is silent, the down arrow goes to the
+        -- first row.
         menu.pending = {open = wanted, cursor = folder and 0 or spot.slot}
         hover_timer = time.after(HOVER_DELAY)
     end
@@ -1982,19 +2035,19 @@ local function run(options: any)
                     local gw, gh, gl = icon_grid()
                     item.x = snap(item.x, gw, gl)
                     item.y = snap(item.y, gh, desktop_top)
-                    -- Перетащенный значок перестаёт быть автопосаженным —
-                    -- но только если место записалось: иначе он вернулся на
-                    -- прежнее, и прежним было автопосаженное.
+                    -- A dragged icon stops being auto-placed — but only if
+                    -- the place was written: otherwise it went back to the
+                    -- old one, and the old one was auto-placed.
                     local was_auto = item.auto
                     item.auto = nil
                     if move_item then
                         local ok, err = move_item(drag.id, item.x, item.y)
                         if not ok then
                             item.auto = was_auto
-                            -- Значок обязан вернуться туда, откуда взят:
-                            -- иначе до перезапуска он на новом месте, а
-                            -- после — на старом, и человек решит, что
-                            -- перезапуск его потерял.
+                            -- The icon must go back where it was taken from:
+                            -- otherwise until the restart it is in the new
+                            -- place, and after it in the old one, and the
+                            -- person decides that the restart lost it.
                             item.x, item.y = drag.from_x, drag.from_y
                             notice = "the icon did not move: " .. tostring(err)
                         end
@@ -2037,9 +2090,10 @@ local function run(options: any)
         end
         if event.action ~= "press" or quitting then return end
 
-        -- Хром слушает только ЛЕВУЮ кнопку: правая по заголовку закрывала
-        -- окно, по «Пуску» открывала меню. Правая и средняя уходят окну под
-        -- указателем, в его тело, — там их ждут программы.
+        -- The chrome listens only to the LEFT button: the right one on the
+        -- title closed the window, on "Start" it opened the menu. The right
+        -- and middle buttons go to the window under the pointer, into its
+        -- body — programs expect them there.
         if event.button ~= "left" then
             if menu then return end
             local window = hit(event.x, event.y)
@@ -2055,9 +2109,10 @@ local function run(options: any)
                 })
                 return
             end
-            -- Правая кнопка по значку стола — контекстное меню у указателя.
-            -- Это то же меню, что «Пуск», только с плоским списком и якорем:
-            -- тема кладёт панель у якоря, а не над панелью задач.
+            -- The right button on a desktop icon — a context menu at the
+            -- pointer. It is the same menu as "Start", only with a flat list
+            -- and an anchor: the theme puts the panel at the anchor, not
+            -- above the taskbar.
             if event.button == "right" and not window then
                 local spot: any = desktop_spot(event.x, event.y)
                 local items: any = {}
@@ -2074,8 +2129,9 @@ local function run(options: any)
                     items = context_items(spot)
                 elseif event.y >= desktop_top and event.y <= desktop_last
                     and type(desktop_properties) == "string" and desktop_properties ~= "" then
-                    -- Пустой стол: «Свойства» стола, если оболочка назвала
-                    -- окно (`options.desktop_properties`) — как в Windows 95.
+                    -- The empty desktop: the desktop's "Properties", if the
+                    -- shell named a window (`options.desktop_properties`) —
+                    -- as in Windows 95.
                     selected_id = nil
                     items = {{label = "Properties", entry = desktop_properties}}
                 end
@@ -2088,20 +2144,21 @@ local function run(options: any)
             return
         end
 
-        -- Открытое меню забирает клик целиком: попал в пункт — открываем,
-        -- мимо — закрываем. Иначе клик «мимо меню» уходил бы в окно под ним,
-        -- и меню оставалось бы висеть поверх результата.
+        -- An open menu takes the whole click: an item hit — it is opened, a
+        -- miss — the menu closes. Otherwise a click "past the menu" would go
+        -- to the window under it, and the menu would stay hanging over the
+        -- result.
         if menu then
-            -- Щелчок решает сам: каскад, которого ждало наведение, не должен
-            -- смениться следом за ним.
+            -- The click decides by itself: the cascade the hover was waiting
+            -- for must not change right after it.
             menu.pending = nil
             hover_timer = nil
             for _, spot in ipairs(menu_hits) do
                 if event.y >= spot.row and event.y <= (spot.bottom_row or spot.row)
                     and event.x >= spot.from and event.x <= spot.to then
-                    -- Папка несёт ПОЛНЫЙ путь от корня, поэтому композитору
-                    -- не надо разбирать дерево и помнить, где он находится:
-                    -- он кладёт путь и рисует снова.
+                    -- A folder carries the FULL path from the root, so the
+                    -- compositor does not need to parse the tree and remember
+                    -- where it is: it puts the path and draws again.
                     if type(spot.open) == "table" then
                         menu.open = spot.open
                         draw()
@@ -2109,8 +2166,9 @@ local function run(options: any)
                     end
                     local item = menu.items[spot.index]
                     if item then
-                        -- Меню, ярлык и alt+n — это сам композитор, а не
-                        -- окно: открытому здесь принадлежать некому.
+                        -- The menu, a shortcut and alt+n are the compositor
+                        -- itself, not a window: what is opened here belongs to
+                        -- nobody.
                         activate_menu_item(item)
                     end
                     menu = nil
@@ -2123,8 +2181,8 @@ local function run(options: any)
             return
         end
 
-        -- Полосы хрома: кнопка окна поднимает и разворачивает его, кнопка
-        -- меню открывает и закрывает каталог.
+        -- The chrome bars: a window button raises and restores the window, the
+        -- menu button opens and closes the catalog.
         for _, spot in ipairs(bar_hits) do
             if event.y >= spot.row and event.y <= (spot.bottom_row or spot.row)
                     and event.x >= spot.from and event.x <= spot.to then
@@ -2153,8 +2211,9 @@ local function run(options: any)
 
         local window = hit(event.x, event.y)
         if not window then
-            -- Пустое место: под окнами лежит стол со значками. Одиночный
-            -- щелчок выделяет и берёт значок, двойной открывает.
+            -- An empty spot: under the windows lies the desktop with icons. A
+            -- single click selects and picks up an icon, a double click opens
+            -- it.
             notice = ""
             -- `any`: after the widget branch below the linter narrows a plain
             -- local to `false?` and then refuses every field of an icon.
@@ -2210,17 +2269,18 @@ local function run(options: any)
         end
         raise(window)
 
-        -- Полоса заголовка занимает весь верхний инсет: у темы с рамкой
-        -- вокруг заголовка это не одна строка.
+        -- The title bar takes the whole top inset: for a theme with a frame
+        -- around the title that is not one row.
         if event.y < window.y + (math.tointeger(insets.top) or 1) then
             local button = title_button_at(window, event.x, event.y)
             if button == "close" then close_window(window)
             elseif button == "minimize" then window.minimized = true
             elseif button == "maximize" then toggle_maximize(window)
             elseif button then
-                -- Кнопка, которой композитор не знает — например «справка» у
-                -- диалога. Делать нечего, но и перетаскивание начинать
-                -- нельзя: окно уехало бы от щелчка по кнопке.
+                -- A button the compositor does not know — for example "help"
+                -- on a dialog. There is nothing to do, but a drag must not
+                -- start either: the window would move away from a click on a
+                -- button.
                 drag.active = false
             else
                 drag = {active = true, id = window.id, mode = "move",
@@ -2244,7 +2304,8 @@ local function run(options: any)
             return
         end
 
-        -- Тело окна: клик уходит внутрь, в координатах самого окна.
+        -- The window body: the click goes inside, in the window's own
+        -- coordinates.
         if event.x < window.x + insets.left or event.x >= window.x + window.w - insets.right
             or event.y < window.y + insets.top or event.y >= window.y + window.h - insets.bottom then return end
         client_capture = window.id
@@ -2257,10 +2318,11 @@ local function run(options: any)
         draw()
     end
 
-    -- Акселераторы держатся на alt: ctrl и tab слишком часто нужны самим
-    -- программам в окнах, и красть их — значит ломать редактор внутри.
-    -- Каталог окон приложения. Читается в момент открытия меню, а не при
-    -- старте: приложение может объявить окно и без перезапуска десктопа.
+    -- Accelerators sit on alt: ctrl and tab are needed too often by the
+    -- programs in the windows themselves, and stealing them means breaking
+    -- the editor inside. The application's window catalog. Read when the menu
+    -- opens, not at start: an application may declare a window without a
+    -- desktop restart.
     catalog = function()
         if read_catalog then
             local items, failure = read_catalog()
@@ -2269,9 +2331,10 @@ local function run(options: any)
         local found, err = registry.find({["meta.type"] = WINDOW_META_TYPE})
         if err then return {}, tostring(err) end
         if type(found) ~= "table" then return {}, "the registry did not answer with a list" end
-        -- Скрытые (`meta.in_menu: false`) сюда не попадают, неизвестный тип
-        -- считается обычным окном. Опечатка в типе не повод не показать
-        -- программу, но и молчать о ней нельзя — иначе она живёт вечно.
+        -- Hidden ones (`meta.in_menu: false`) do not get here, an unknown
+        -- type counts as an ordinary window. A typo in the type is no reason
+        -- not to show the program, but keeping quiet about it is not allowed
+        -- either — otherwise it lives forever.
         local items, warnings = programs.menu(found)
         for _, warning in ipairs(warnings) do
             log:warn("unknown window type", {
@@ -2282,16 +2345,16 @@ local function run(options: any)
         return items, nil
     end
 
-    -- ─── стрелки по меню ─────────────────────────────────────────────────
+    -- ─── menu arrows ─────────────────────────────────────────────────────
     --
-    -- Курсор ходит по РАЗМЕТКЕ, а не по каталогу: выбирается то, что
-    -- нарисовано. Считать выбор заново значило бы завести второе
-    -- представление о том, где строки, и однажды курсор поехал бы по строкам,
-    -- которых на экране нет.
+    -- The cursor walks the HIT LAYOUT, not the catalog: what gets selected is
+    -- what is drawn. Computing the choice anew would mean keeping a second
+    -- notion of where the rows are, and one day the cursor would move over rows
+    -- that are not on the screen.
 
-    -- Строки самой глубокой раскрытой панели — те, между которыми ходит
-    -- курсор. Панель левее раскрыта, но выбор идёт в той, что открыли
-    -- последней.
+    -- The rows of the deepest open panel — those the cursor moves between. A
+    -- panel further left is open, but the choice goes on in the one opened
+    -- last.
     local function menu_rows()
         local deepest = 0
         for _, spot in ipairs(menu_hits) do
@@ -2310,9 +2373,9 @@ local function run(options: any)
         return rows
     end
 
-    -- Строка под курсором. Сначала та, которую тема ПОМЕТИЛА, и только потом
-    -- та, чей номер совпал: пометка — единственное, что связывает наш номер с
-    -- нарисованным.
+    -- The row under the cursor. First the one the theme MARKED, and only then
+    -- the one whose number matched: the mark is the only thing that links our
+    -- number to what is drawn.
     local function menu_cursor_spot()
         local rows = menu_rows()
         for _, spot in ipairs(rows) do
@@ -2348,11 +2411,11 @@ local function run(options: any)
         return true
     end
 
-    -- ─── стрелки по столу ────────────────────────────────────────────────
+    -- ─── desktop arrows ──────────────────────────────────────────────────
 
-    -- Значки по разметке: у значка с подписью попаданий несколько (строка
-    -- рисунка и строки подписи), а значок один — поэтому они сводятся по id, и
-    -- за место берётся самая верхняя строка.
+    -- Icons from the hit layout: an icon with a caption has several hits (the
+    -- picture row and the caption rows), but the icon is one — so they are
+    -- merged by id, and the topmost row is taken as its place.
     local function icon_spots()
         local seen: any = {}
         local spots = {}
@@ -2384,7 +2447,7 @@ local function run(options: any)
         for _, spot in ipairs(spots) do
             if spot.id == selected_id then current = spot end
         end
-        -- Ничего не выделено — первая стрелка выделяет, а не двигает.
+        -- Nothing selected — the first arrow selects rather than moves.
         if current == nil then
             selected_id = spots[1].id
             return true
@@ -2461,8 +2524,8 @@ local function run(options: any)
             elseif event.key_type == "down" then
                 if move_menu_cursor(1) then draw() end
             elseif event.key_type == "right" then
-                -- Папка раскрывается вправо: путь кладётся целиком, как и при
-                -- щелчке, — композитор дерева не помнит.
+                -- A folder opens to the right: the whole path is put, as on a
+                -- click — the compositor does not remember the tree.
                 local spot = menu_cursor_spot()
                 if spot and type(spot.open) == "table" then
                     menu.open = spot.open
@@ -2481,9 +2544,10 @@ local function run(options: any)
             elseif event.key_type == "enter" then
                 local spot = menu_cursor_spot()
                 if spot == nil then
-                    -- Тема не пометила выбранную строку: enter молчал бы, а
-                    -- молчащая клавиша неотличима от сломанного меню. Курсор
-                    -- 0 — другое: строки не выбрано, папку раскрыло наведение.
+                    -- The theme did not mark the selected row: enter would be
+                    -- silent, and a silent key is indistinguishable from a
+                    -- broken menu. Cursor 0 is different: no row is selected,
+                    -- the folder was opened by hovering.
                     if (math.tointeger(menu.cursor) or 0) > 0 then
                         notice = "the theme did not mark the selected menu row"
                         draw()
@@ -2498,14 +2562,15 @@ local function run(options: any)
                 end
             end
 
-            -- Открытое меню забирает ввод целиком: иначе клавиша уехала бы в
-            -- окно под ним.
+            -- An open menu takes all input: otherwise the key would go to the
+            -- window under it.
             return "handled"
         end
 
-        -- Стрелки принадлежат столу только тогда, когда ни одно окно не в
-        -- фокусе. Иначе стол крал бы их у редактора внутри окна — а это ровно
-        -- та кража клавиш, из-за которой акселераторы здесь держатся на alt.
+        -- The arrows belong to the desktop only when no window has the focus.
+        -- Otherwise the desktop would steal them from an editor inside a
+        -- window — and that is exactly the key theft because of which the
+        -- accelerators here sit on alt.
         if focused() == nil then
             if event.key_type == "up" then
                 if move_selection(0, -1) then draw() end
@@ -2557,7 +2622,7 @@ local function run(options: any)
         return "forward"
     end
 
-    -- ─── команды снаружи ─────────────────────────────────────────────────
+    -- ─── commands from outside ───────────────────────────────────────────
 
     local function describe(window)
         return {
@@ -2569,16 +2634,17 @@ local function run(options: any)
             args = window.args,
             window_type = window.window_type,
             opened_by = window.opened_by,
-            -- Чем рисуется содержимое и дождалось ли оно данных. Снаружи это
-            -- единственный способ отличить «вид ждёт состояния» от «вид
-            -- нарисован пустым»: на экране это одно и то же.
+            -- What draws the content and whether it has got its data. From
+            -- outside this is the only way to tell "the view is waiting for
+            -- state" from "the view is drawn empty": on screen they are the
+            -- same.
             content = window.content,
             waiting = window.waiting == true,
             state_revision = window.state_revision,
-            -- Подпись вида (`content_state.caption`) — то немногое, что вид
-            -- рассказывает о себе словами. Снаружи это единственный способ
-            -- узнать, что прокрутка или раскрытие дошли до поставщика, не
-            -- глядя на пиксели.
+            -- The view's caption (`content_state.caption`) — the little a view
+            -- tells about itself in words. From outside this is the only way to
+            -- learn that a scroll or an expand reached the provider without
+            -- looking at the pixels.
             caption = type(window.content_state) == "table"
                 and type(window.content_state.caption) == "string"
                 and window.content_state.caption or nil,
@@ -2589,11 +2655,11 @@ local function run(options: any)
         }
     end
 
-    -- Ответ всегда называет команду, на которую отвечает. Без этого поля
-    -- спрашивающий сопоставляет ответ с вопросом по одному лишь порядку — а
-    -- отказ, приехавший сам (см. `refuse`), этот порядок нарушает.
-    -- Путь раскрытой папки строкой: наружу его отдаёт командный канал, а
-    -- строка читается человеком без разбора таблиц.
+    -- A reply always names the command it answers. Without this field the asker
+    -- matches a reply to a question by order alone — and a refusal that arrived
+    -- on its own (see `refuse`) breaks that order.
+    -- The path of the open folder as a string: the command channel gives it
+    -- out, and a person reads a string without parsing tables.
     local function menu_path_text()
         if menu == nil then return nil end
         local open: any = menu.open
@@ -2603,10 +2669,11 @@ local function run(options: any)
         return table.concat(parts, "/")
     end
 
-    -- Сколько строк на самом глубоком уровне и сколько из них папки.
-    -- Считается по РАЗМЕТКЕ, как и всё про меню: это то, что нарисовано.
-    -- Объявлены заранее, потому что зовёт их ответ командного канала, а
-    -- считают они по `menu_hits`, который к тому моменту уже собран.
+    -- How many rows are on the deepest level and how many of them are folders.
+    -- Computed from the HIT LAYOUT, like everything about the menu: it is what
+    -- is drawn. Declared in advance because the command channel's reply calls
+    -- them, and they compute from `menu_hits`, which is already assembled by
+    -- then.
     local function menu_level_rows()
         local deepest = 0
         for _, spot in ipairs(menu_hits) do
@@ -2642,18 +2709,19 @@ local function run(options: any)
         process.send(to, REPLY_TOPIC, body)
     end
 
-    -- Отказ на команду, которой никто не ждёт.
+    -- A refusal of a command nobody is waiting for.
     --
-    -- Команды от окна приходят без обратного адреса: окно не ждёт ответа,
-    -- чтобы не морозить свой кадр. Значит «нет такого окна» и «не знаю такой
-    -- команды» уходили В НИКУДА, и опечатка в идентификаторе выглядела как
-    -- выполненная команда.
+    -- Commands from a window come without a return address: the window does not
+    -- wait for a reply, so as not to freeze its frame. So "no such window" and
+    -- "unknown command" went NOWHERE, and a typo in an id looked like an
+    -- executed command.
     --
-    -- Теперь у отказа три адресата, и каждый нужен своему читателю: строка
-    -- состояния — человеку за столом, лог — тому, кто разбирается потом, и
-    -- САМ ОТПРАВИТЕЛЬ — потому что у окна есть канал ответов, и получить туда
-    -- отказ оно может, не замирая. Пометка `unsolicited` обязательна: без неё
-    -- приехавший сам отказ был бы принят за ответ на следующий вопрос.
+    -- Now a refusal has three recipients, and each is needed by its own reader:
+    -- the status line — by the person at the desktop, the log — by whoever
+    -- investigates later, and THE SENDER ITSELF — because a window has a reply
+    -- channel and can receive the refusal there without freezing. The
+    -- `unsolicited` mark is required: without it a refusal that arrived on its
+    -- own would be taken for the reply to the next question.
     local function refuse(reason, to, topic, from: any)
         if to ~= "" then
             reply({ok = false, error = reason}, to, topic)
@@ -2679,8 +2747,9 @@ local function run(options: any)
         local window = find(type(body.id) == "string" and body.id or "")
 
         if topic == "desktop.list" then
-            -- Истёкшие пункты снимаются и здесь: иначе список сказал бы про
-            -- пункт, которого на экране уже нет, до следующего тика часов.
+            -- Expired items are removed here too: otherwise the list would
+            -- report an item that is no longer on the screen, until the next
+            -- clock tick.
             local pruned = prune_tray()
             local list = {}
             for _, item in ipairs(windows) do list[#list + 1] = describe(item) end
@@ -2690,50 +2759,58 @@ local function run(options: any)
                 -- The name this desktop claimed: several run at once under a
                 -- terminal.ssh host, one per connection.
                 service = SERVICE_NAME,
-                -- Размер ячейки в пикселях и режим кадра: окно «Свойства:
-                -- Экран» показывает разрешение по ним, а само их снять не
-                -- может — терминал отвечает только композитору.
+                -- The cell size in pixels and the frame mode: the "Display
+                -- Properties" window shows the resolution from them and
+                -- cannot take them itself — the terminal answers only the
+                -- compositor.
                 cell = {w = cell_w, h = cell_h},
                 pixels = PIXELS,
-                -- Кто вошёл. Без этого поля «окна под пользователем» и «окна
-                -- под служебным актором» снаружи неотличимы.
+                -- Who logged on. Without this field "windows under the user"
+                -- and "windows under the service actor" are indistinguishable
+                -- from outside.
                 user = IDENTITY and {id = IDENTITY.context.user_id, name = IDENTITY.context.user_name} or nil,
-                -- Строка состояния: единственное место, где отказ виден
-                -- человеку. Наружу она отдаётся, чтобы «отказ показан» можно
-                -- было проверить, а не рассматривать глазами.
+                -- The status line: the only place where a refusal is visible
+                -- to a person. It is given out so that "the refusal was
+                -- shown" can be checked rather than examined by eye.
                 notice = notice,
-                -- Открыто ли меню. Снаружи это единственный способ отличить
-                -- «щелчок по кнопке меню не дошёл» от «дошёл, а нарисовать
-                -- меню не смогли»: на экране оба выглядят одинаково.
+                -- Whether the menu is open. From outside this is the only way
+                -- to tell "the click on the menu button did not arrive" from
+                -- "it arrived, but the menu could not be drawn": on screen
+                -- both look the same.
                 menu_open = menu ~= nil,
-                -- Выделенный значок стола: стрелки двигают именно его, и
-                -- снаружи «стрелка не сработала» иначе неотличимо от «значок
-                -- выделен, но тема этого не нарисовала».
+                -- The selected desktop icon: the arrows move exactly it, and
+                -- from outside "the arrow did not work" is otherwise
+                -- indistinguishable from "the icon is selected, but the theme
+                -- did not draw that".
                 selected = selected_id,
-                -- Раскрытая папка меню, путём от корня. Без неё «стрелка
-                -- вправо не сработала» и «сработала, а тема не нарисовала
-                -- подменю» выглядят одинаково — оба как ноль байт на экране.
+                -- The open menu folder, as a path from the root. Without it
+                -- "the right arrow did not work" and "it worked, but the
+                -- theme did not draw the submenu" look the same — both as
+                -- zero bytes on the screen.
                 menu_path = menu_path_text(),
-                -- Сколько строк на текущем уровне и сколько из них
-                -- раскрываются. Третий вид того же вопроса: «вправо молчит»
-                -- может значить «нечего раскрывать», и отличить это иначе
-                -- нельзя — пустое меню и меню без папок на экране одинаковы.
+                -- How many rows are on the current level and how many of them
+                -- open. A third form of the same question: "right is silent"
+                -- may mean "nothing to open", and there is no other way to
+                -- tell — an empty menu and a menu without folders look the
+                -- same on the screen.
                 menu_choices = menu_choices_count(),
                 menu_folders = menu_folders_count(),
                 menu_context = (menu ~= nil and menu.anchor ~= nil) or false,
-                -- Номер выбранной строки на текущем уровне; 0 — не выбрано.
-                -- Без него «наведение не выделило» и «выделило, а тема не
-                -- нарисовала» — один и тот же кадр.
+                -- The number of the selected row on the current level; 0 —
+                -- none selected. Without it "the hover did not highlight" and
+                -- "it highlighted, but the theme did not draw it" are one and
+                -- the same frame.
                 menu_cursor = menu and (math.tointeger(menu.cursor) or 0) or nil,
-                -- Цена последнего кадра: изменившиеся строки, отправленные
-                -- растры, байты. Мера для §8 FR-005 и единственный способ
-                -- заметить, что хром порезан неверно.
-                -- Плюс время: paint_ms/present_ms последнего кадра, его
-                -- причина и сводка avg/p95/max по последним FRAME_WINDOW.
+                -- The cost of the last frame: changed rows, rasters sent,
+                -- bytes. The measure for §8 of FR-005 and the only way to
+                -- notice that the chrome is sliced wrongly.
+                -- Plus time: paint_ms/present_ms of the last frame, its cause
+                -- and an avg/p95/max summary over the last FRAME_WINDOW.
                 frame = frame_report(body.frame_samples == true),
                 pixels = PIXELS,
-                -- Трей с владельцами и остатком срока: «пункт не появился» и
-                -- «появился, а тема его не нарисовала» иначе неотличимы.
+                -- The tray with owners and time left: "the item did not
+                -- appear" and "it appeared, but the theme did not draw it"
+                -- are otherwise indistinguishable.
                 tray = tray_view(true),
                 -- Widgets without their trees: "not spawned", "waiting for
                 -- its first state" and "stopped" differ here and nowhere else.
@@ -2742,10 +2819,10 @@ local function run(options: any)
             return pruned
         end
 
-        -- Пункт области уведомлений: `{key, text, entry?, title?, ttl?}` кладёт
-        -- или обновляет, `{key, remove = true}` снимает. Отказ называет
-        -- причину — поставщик, которому трей тихо не показал пункт, решил бы,
-        -- что показал.
+        -- A notification area item: `{key, text, entry?, title?, ttl?}` puts
+        -- or updates it, `{key, remove = true}` removes it. A refusal names
+        -- the reason — a provider whose item the tray silently did not show
+        -- would decide that it had.
         if topic == "desktop.tray" then
             local accepted, why, changed = set_tray(body, from)
             if not accepted then return refuse(tostring(why), to, topic, from) end
@@ -2763,11 +2840,12 @@ local function run(options: any)
             return true
         end
 
-        -- Окно мастерской в реестр — по просьбе снаружи, тем же кодом, что
-        -- восстановление на старте. Просит туз MCP: скоуп MCP-сессии запрещает
-        -- `registry.apply` явным deny, и туз, применяющий запись сам, молча
-        -- ничего бы не сделал. Композитор работает под своим актором — у него
-        -- это право есть, и строка к тому моменту уже в хранилище.
+        -- A workshop window into the registry — on request from outside, with
+        -- the same code as the restore at start. The MCP tool asks: the MCP
+        -- session's scope forbids `registry.apply` with an explicit deny, and
+        -- a tool that applied the entry itself would silently do nothing. The
+        -- compositor runs under its own actor — it has this permission, and
+        -- by that moment the row is already in storage.
         if topic == "desktop.workshop" then
             local name = type(body.name) == "string" and body.name or ""
             if name == "" then return refuse("window name not given", to, topic, from) end
@@ -2795,11 +2873,11 @@ local function run(options: any)
             return true
         end
 
-        -- Дальше только команды, адресованные конкретному окну. Порядок
-        -- проверок тут — не стиль: пока «нет окна» стояло первым, ЛЮБАЯ
-        -- неизвестная команда отвечала «нет окна nil», отправитель шёл искать
-        -- опечатку в идентификаторе, которого не посылал, а ветка про
-        -- неизвестную команду была недостижима вовсе.
+        -- From here on only commands addressed to a specific window. The
+        -- order of the checks here is not style: while "no window" came
+        -- first, ANY unknown command answered "no window nil", the sender
+        -- went looking for a typo in an id it never sent, and the branch for
+        -- an unknown command was unreachable altogether.
         -- The state of a widget (FR-006 §3), accepted only from the process
         -- the compositor spawned for it — the rule of view windows: nobody
         -- else can draw into a widget. Widget ids are `g<n>`, never `w<n>`.
@@ -2860,8 +2938,8 @@ local function run(options: any)
             return refuse("unknown command " .. tostring(topic), to, topic, from)
         end
         if not window then
-            -- Молчаливое «нет такого» превратило бы опечатку в id в успешную
-            -- команду.
+            -- A silent "no such thing" would turn a typo in an id into a
+            -- successful command.
             return refuse("no window " .. tostring(body.id), to, topic, from)
         end
 
@@ -2890,10 +2968,10 @@ local function run(options: any)
             reply({ok = true, window = describe(window)}, to, topic)
             return true
         elseif topic == "desktop.state" then
-            -- Состояние принимается ТОЛЬКО от поставщика этого окна. Иначе
-            -- содержимое чужого окна мог бы подменить любой, кто знает номер,
-            -- — а вид, нарисованный подложенными данными, от настоящего
-            -- неотличим.
+            -- The state is accepted ONLY from this window's provider.
+            -- Otherwise the content of someone else's window could be
+            -- replaced by anyone who knows the number — and a view drawn from
+            -- planted data is indistinguishable from the real one.
             if window.content ~= "pixels" then
                 return refuse("window " .. window.id .. " draws itself; it takes no state",
                     to, topic, from)
@@ -2913,7 +2991,8 @@ local function run(options: any)
             reply({ok = true, revision = window.state_revision}, to, topic)
             return true
         elseif topic == "desktop.screen" then
-            -- Копия, а не сам массив: строки снимка — общая память брокера.
+            -- A copy, not the array itself: the snapshot's rows are the
+            -- broker's shared memory.
             local rows = {}
             for index, row in ipairs(window.rows) do rows[index] = row end
             reply({ok = true, id = window.id, rows = rows, ready = window.ready}, to, topic)
@@ -2946,12 +3025,12 @@ local function run(options: any)
             return false
         end
 
-        -- Досюда доходит только команда окна, которую забыли разобрать выше:
-        -- список WINDOW_COMMANDS и ветки обязаны совпадать.
+        -- Only a window command someone forgot to handle above gets here: the
+        -- WINDOW_COMMANDS list and the branches must match.
         return refuse("command " .. tostring(topic) .. " is declared but not handled", to, topic, from)
     end
 
-    -- ─── цикл ────────────────────────────────────────────────────────────
+    -- ─── loop ────────────────────────────────────────────────────────────
 
     local function tick_clock()
         local now = time.now()
@@ -2980,7 +3059,7 @@ local function run(options: any)
         if frame_gate.timer then cases[#cases + 1] = frame_gate.timer:case_receive() end
         local watched = {}
         for _, window in ipairs(windows) do
-            -- У окна-вида кадров нет: их некому публиковать.
+            -- A view window has no frames: there is nobody to publish them.
             if window.updates then
                 cases[#cases + 1] = window.updates:case_receive()
                 watched[#watched + 1] = window
@@ -2993,18 +3072,19 @@ local function run(options: any)
 
         local selected = channel.select(cases)
         if not selected.ok then break end
-        -- Причина кадра: каждая ветка ниже называет себя, `draw` её пишет в
-        -- цену. «unknown» в статусе — ветка, которую забыли назвать.
+        -- The frame's cause: every branch below names itself, and `draw`
+        -- writes it into the cost. "unknown" in the status is a branch
+        -- someone forgot to name.
         meter.trigger, meter.snapshot_ms = "unknown", nil
 
-        -- Тик часов не событие окна: он ничего не пересылает, только
-        -- обновляет кадр, если минута сменилась.
+        -- The clock tick is not a window event: it forwards nothing, it only
+        -- updates the frame if the minute changed.
         local handled = false
         if selected.channel == ticker then
             meter.trigger = "tick"
             ticker = time.after(CLOCK_TICK)
-            -- Оба вопроса задаются всегда: `a() or b()` не спросил бы трей в
-            -- ту минуту, когда сменились часы.
+            -- Both questions are always asked: `a() or b()` would not ask the
+            -- tray in the minute the clock changed.
             local ticked = tick_clock()
             local pruned = prune_tray()
             if ticked or pruned then draw() end
@@ -3023,8 +3103,8 @@ local function run(options: any)
             handled = true
         end
 
-        -- Кадр окна. Уведомление — водяной знак, а не кадр: состояние
-        -- всегда берётся снимком.
+        -- A window's frame. The notification is a watermark, not a frame: the
+        -- state is always taken by snapshot.
         for _, window in ipairs(watched) do
             if selected.channel == window.updates then
                 meter.trigger = "pty:" .. tostring(window.id)
@@ -3069,8 +3149,8 @@ local function run(options: any)
                 if message then
                     meter.trigger = "command:" .. tostring(message:topic())
                     local body = unwrap(message:payload())
-                    -- Отправитель нужен, чтобы связать диалог с его окном:
-                    -- в теле такой связи верить нельзя.
+                    -- The sender is needed to link a dialog to its window:
+                    -- such a link in the body cannot be trusted.
                     if handle_command(message:topic(), body, message:from()) then draw() end
                 end
             elseif selected.channel == lifecycle then
@@ -3110,10 +3190,11 @@ local function run(options: any)
                             forget(window)
                             break
                         end
-                        -- Умер поставщик состояния: окно-вид остаётся, но
-                        -- рисовать его больше нечем — и об этом надо сказать.
-                        -- Вид, застывший на последнем состоянии, выглядит
-                        -- живым и врёт тем убедительнее, чем дольше висит.
+                        -- The state provider died: the view window stays, but
+                        -- there is nothing to draw it with any more — and
+                        -- that has to be said. A view frozen on its last
+                        -- state looks alive and lies the more convincingly
+                        -- the longer it hangs.
                         if window.state_pid ~= nil and tostring(window.state_pid) == gone then
                             if window.closing then forget(window); break end
                             window.state_pid = nil
@@ -3130,7 +3211,8 @@ local function run(options: any)
                 end
             else
                 local event = selected.value
-                -- resize / mouse / key / paste…: вид события и есть причина.
+                -- resize / mouse / key / paste…: the kind of event is the
+                -- cause.
                 meter.trigger = tostring(event.type)
                 if event.type == "resize" then
                     -- Font zoom changes pixels per cell independently of the
@@ -3139,8 +3221,9 @@ local function run(options: any)
                     local refreshed, refresh_error = refresh_cell_size()
                     if refreshed then refresh_frame()
                     else notice = "cell size not refreshed: " .. tostring(refresh_error) end
-                    -- Ресайз тоже приходит с нулями, когда терминал исчез;
-                    -- нулевой холст уронил бы композитор вместе со всеми окнами.
+                    -- A resize also comes with zeros when the terminal is
+                    -- gone; a zero canvas would bring the compositor down
+                    -- together with all the windows.
                     local w = math.floor(tonumber(event.width) or 0)
                     local h = math.floor(tonumber(event.height) or 0)
                     if w >= MIN_SCREEN_W then width = w end
@@ -3191,10 +3274,11 @@ local function run(options: any)
         if terminal_state.lost and #windows == 0 then break end
     end
 
-    -- Прощание: «Теперь питание компьютера можно отключить». Рисует тема,
-    -- если умеет (`chrome.farewell`), держится `chrome.FAREWELL_HOLD` секунд
-    -- (по умолчанию пять), ввод за это время съедается — экран не для
-    -- взаимодействия. Тема без прощания выходит сразу, как раньше.
+    -- Farewell: "It's now safe to turn off your computer." Drawn by the theme
+    -- if it can (`chrome.farewell`), held for `chrome.FAREWELL_HOLD` seconds
+    -- (five by default); input during that time is swallowed — the screen is
+    -- not for interaction. A theme without a farewell exits at once, as
+    -- before.
     if farewell_wanted and not terminal_state.lost and #windows == 0 and type(chrome.farewell) == "function" then
         canvas:clear(" ")
         local painted = chrome.farewell(canvas, width, height)

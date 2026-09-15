@@ -1,13 +1,13 @@
--- POST /tui-desktop/apps — собрать окно в работающем рантайме и сохранить его.
+-- POST /tui-desktop/apps — build a window in the running runtime and save it.
 --
--- Запись процесса собирается и применяется через changes API реестра, поэтому
--- окно появляется в меню десктопа сразу: ни файла на диске, ни перезапуска.
--- Исходник при этом ложится в таблицу, и загрузчик поднимет окно обратно
--- после рестарта.
+-- The process entry is built and applied through the registry's changes API,
+-- so the window appears in the desktop menu at once: no file on disk, no
+-- restart. The source goes into the table, and the loader brings the window
+-- back after a restart.
 --
--- Порядок здесь важен: сперва строка, потом реестр. Если применение не
--- удалось, строка убирается — иначе хранилище копило бы окна, которые никогда
--- не поднимутся, и каждый старт молча жаловался бы на них.
+-- The order matters here: the row first, then the registry. If applying
+-- failed, the row is removed — otherwise the storage would accumulate windows
+-- that never come up, and every start would silently complain about them.
 
 local http = require("http")
 local json = require("json")
@@ -35,8 +35,8 @@ local function handler()
     local body = json.decode(req:body() or "") or {}
     if type(body) ~= "table" then body = {} end
 
-    -- Разбор и проверка тела — в библиотеке, общей с тузом MCP: два разбора
-    -- одного тела разошлись бы на первом новом поле.
+    -- Parsing and checking the body live in the library shared with the MCP
+    -- tool: two parsings of one body would diverge on the first new field.
     local window, verr = apps.prepare(body)
     if not window then return bad(res, tostring(verr)) end
     local name = window.name

@@ -1,9 +1,9 @@
--- Та же растровая тема, но отдающая попадания ПЛОСКИМ списком.
+-- The same raster theme, but returning hits as a FLAT list.
 --
--- Ровно та ошибка, которую спецификация допускает прочитать: «hits — как
--- сейчас». «Как сейчас» — это три разных списка от трёх вызовов, и `id` в них
--- значит разное. Тема существует затем, чтобы проверить, что механика такой
--- список не угадывает, а называет причину там, где её увидит человек.
+-- Exactly the mistake the specification allows a reader to make: "hits — as
+-- now". "As now" is three different lists from three calls, and `id` means
+-- something different in each. The theme exists to check that the mechanics
+-- does not guess at such a list but names the reason where a person will see it.
 local base = require("pixel_chrome")
 
 local chrome = {}

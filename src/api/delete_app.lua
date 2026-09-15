@@ -1,9 +1,10 @@
--- DELETE /tui-desktop/apps/{name} — убрать собранное окно совсем.
+-- DELETE /tui-desktop/apps/{name} — remove a built window entirely.
 --
--- Снимает и строку, и запись реестра. Уже открытые окна этого вида при этом
--- продолжают работать: процесс живёт своей жизнью, а удалена возможность
--- открыть новое. Ответ говорит об этом прямо, иначе «удалил, а оно на экране»
--- читается как несработавшее удаление.
+-- Removes both the row and the registry entry. Windows of this kind that are
+-- already open keep working: the process lives its own life, and what is
+-- removed is the ability to open a new one. The answer says so directly,
+-- otherwise "deleted, yet it is on screen" reads as a deletion that did not
+-- work.
 
 local http = require("http")
 local security = require("security")

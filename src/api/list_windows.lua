@@ -1,7 +1,7 @@
--- GET /tui-desktop/windows — что сейчас открыто на экране.
+-- GET /tui-desktop/windows — what is open on the screen now.
 --
--- Аутентификацию обеспечивает роутер (token_auth + endpoint_firewall);
--- проверка актора держит честными прямые вызовы.
+-- Authentication is provided by the router (token_auth + endpoint_firewall);
+-- the actor check keeps direct calls honest.
 local http = require("http")
 local security = require("security")
 local control = require("control")
@@ -18,8 +18,9 @@ local function handler()
         return
     end
 
-    -- ?frame_samples=1 — сырые кадры кольца замера (до двухсот строк): нужны
-    -- замеру по фазам, в обычном статусе только лишний вес.
+    -- ?frame_samples=1 — raw frames of the measurement ring (up to two hundred
+    -- rows): needed for the per-phase measurement, in the ordinary status they
+    -- are only extra weight.
     local samples_wanted = req:query("frame_samples") == "1"
     local answer, err = control.call("desktop.list", {frame_samples = samples_wanted})
     if not answer then
@@ -34,19 +35,20 @@ local function handler()
         windows = answer.windows or {},
         focused = answer.focused,
         screen = answer.screen,
-        -- Что стало с сохранёнными окнами на старте: молчание здесь читалось
-        -- бы как «окон не было», а это другое утверждение.
+        -- What happened to the saved windows at start: silence here would read
+        -- as "there were no windows", and that is a different statement.
         restore = answer.restore,
-        -- Состояние стола целиком, а не только список окон. Каждое поле здесь
-        -- различает два состояния, которые СНАРУЖИ выглядят одинаково: отказ,
-        -- который видит только человек в строке состояния; открытое меню
-        -- против недошедшего щелчка; раскрытая папка против нераскрытой;
-        -- «раскрывать нечего» против «сломано»; выделенный значок против
-        -- ненарисованного выделения; цена кадра, по которой видно неверно
-        -- порезанный хром — он рисует правильный экран, просто медленный.
+        -- The whole desktop state, not only the window list. Each field here
+        -- tells apart two states that look the same FROM OUTSIDE: a refusal
+        -- that only the person sees in the status line; an open menu versus
+        -- a click that did not arrive; an expanded folder versus an
+        -- unexpanded one; "nothing to expand" versus "broken"; a selected
+        -- icon versus a selection that was not drawn; the frame cost, which
+        -- shows wrongly cut chrome — it draws the right screen, just slowly.
         --
-        -- Композитор их уже отдаёт; не пробросить их здесь значило бы, что с
-        -- живого стенда, где всё это и нужно, ими воспользоваться нельзя.
+        -- The compositor already returns them; not passing them through here
+        -- would mean they cannot be used from the live stand, where all of
+        -- this is needed.
         notice = answer.notice,
         menu_open = answer.menu_open,
         menu_path = answer.menu_path,

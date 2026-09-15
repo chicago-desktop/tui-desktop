@@ -1,12 +1,13 @@
--- Хранилище окон, собранных в работающем рантайме.
+-- Storage of windows built in the running runtime.
 --
--- Реестр собирается из файлов при старте, поэтому применённая версия его не
--- переживает. Эта таблица — то, из чего окна поднимаются обратно: загрузчик
--- читает её на старте и применяет записи в реестр.
+-- The registry is assembled from files at start, so an applied version does
+-- not survive the start. This table is what windows are brought back from:
+-- the loader reads it at start and applies the entries to the registry.
 --
--- Одна строка на окно: имя и есть ключ. Повторная сборка перезаписывает —
--- истории правок здесь нет намеренно, иначе понадобились бы ручки списка
--- версий и отката, а откат к неработавшему коду ценности не имеет.
+-- One row per window: the name is the key. A repeated build overwrites — there
+-- is no edit history here on purpose, otherwise endpoints for listing versions
+-- and rolling back would be needed, and a rollback to code that did not work
+-- has no value.
 
 return require("migration").define(function()
     migration("Create windows_tui_desktop_windows table", function()

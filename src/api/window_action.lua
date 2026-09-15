@@ -1,16 +1,16 @@
--- POST /tui-desktop/windows/{id}/{action} — сделать что-то с одним окном.
+-- POST /tui-desktop/windows/{id}/{action} — do something with one window.
 --
--- Действия: close, focus, minimize, move, resize, type, key, screen.
--- `screen` возвращает содержимое окна строками — это то, чем внешний агент
--- ЧИТАЕТ экран программы, которой управляет.
+-- Actions: close, focus, minimize, move, resize, type, key, screen.
+-- `screen` returns the window's content as rows — this is how an external
+-- agent READS the screen of the program it drives.
 local http = require("http")
 local json = require("json")
 local security = require("security")
 local control = require("control")
 
--- Белый список нужен не ради безопасности — композитор и так отвергает
--- незнакомое, — а ради ответа: опечатка в действии иначе доедет до него и
--- вернётся как «неизвестная команда», уже без имени ручки.
+-- The whitelist is not for security — the compositor rejects the unfamiliar
+-- anyway — but for the answer: a typo in the action would otherwise reach it
+-- and come back as "unknown command", already without the endpoint's name.
 local ACTIONS = {
     close = "desktop.close", focus = "desktop.focus", minimize = "desktop.minimize",
     move = "desktop.move", resize = "desktop.resize", type = "desktop.type",

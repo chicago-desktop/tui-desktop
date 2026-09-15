@@ -1,8 +1,8 @@
--- Окно, которое просто есть.
+-- A window that simply exists.
 --
--- Ни кадра, ни ввода: проверяется родство окон, а не рисование. `tty.start()`
--- не зовётся намеренно — такое окно композитор гасит сразу, без вежливого
--- срока, и закрытие в тесте не приходится ждать три секунды.
+-- No frame, no input: what is checked is window kinship, not drawing. `tty.start()`
+-- is deliberately not called — the compositor kills such a window at once, without
+-- the polite grace period, and the test does not have to wait three seconds for the close.
 local channel = require("channel")
 local time = require("time")
 

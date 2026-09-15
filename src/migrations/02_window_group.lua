@@ -1,13 +1,14 @@
--- Папка меню у окна, собранного в рантайме.
+-- The menu folder of a window built in the runtime.
 --
--- У записи из файла папку называет `meta.group`; у окна из мастерской
--- объявить её негде — код приезжает по HTTP, и всё, что о нём известно,
--- лежит в этой таблице. Без колонки каждое такое окно ложилось туда, куда
--- оболочка кладёт безымянных, и меню росло с каждым собранным окном.
+-- For an entry from a file the folder is named by `meta.group`; a window from
+-- the workshop has nowhere to declare it — the code arrives over HTTP, and all
+-- that is known about it lies in this table. Without the column every such
+-- window landed where the shell puts unnamed ones, and the menu grew with each
+-- built window.
 --
--- Пустая строка — «папка не названа»: загрузчик тогда `meta.group` не пишет
--- вовсе, и оболочка решает сама. Так «не сказал» остаётся отличимым от
--- «сказал: корень», как и у записей из файлов.
+-- An empty string is "the folder is not named": the loader then does not write
+-- `meta.group` at all, and the shell decides itself. That way "did not say"
+-- stays distinguishable from "said: root", as with entries from files.
 
 return require("migration").define(function()
     migration("Add menu_group to windows_tui_desktop_windows", function()

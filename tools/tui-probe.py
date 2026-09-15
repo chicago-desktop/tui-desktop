@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Пробник для TUI: запускает команду в настоящем PTY и снимает экран текстом.
+"""TUI probe: runs a command in a real PTY and captures the screen as text.
 
-Тот же смысл, что у tools/probe.mjs для браузера: полноэкранную программу
-нельзя проверить, посмотрев на её код или на код возврата. `wippy run tui`
-без настоящего терминала не запустится вовсе, а запущенный пишет не строки,
-а поток ANSI с абсолютным позиционированием.
+Same idea as tools/probe.mjs for the browser: a full-screen program cannot be
+checked by looking at its code or its exit code. `wippy run tui` does not
+start at all without a real terminal, and once running it writes not lines
+but an ANSI stream with absolute positioning.
 
-Пробник даёт PTY заданного размера, печатает по сценарию, и разбирает поток
-в сетку символов. Разбирает ровно то, что пишет surface рантайма:
-    \\x1b[<row>;<col>H  текст  \\x1b[0m\\x1b[K
-плюс переключение альтернативного экрана и синхронизацию кадра, которые на
-содержимое не влияют.
+The probe gives it a PTY of a given size, types according to a script, and
+parses the stream into a character grid. It parses exactly what the runtime's
+surface writes:
+    \\x1b[<row>;<col>H  text  \\x1b[0m\\x1b[K
+plus the alternate-screen switch and frame synchronization, which do not
+affect the content.
 
     python3 tools/tui-probe.py --cols 100 --rows 30 -- wippy run tui
     python3 tools/tui-probe.py --send 'echo probe-ok' --send-key enter -- wippy run tui
@@ -47,23 +48,23 @@ KEYS = {
 
 
 def mouse(col, row, button=0, press=True):
-    """Событие мыши в формате SGR 1006 — тот, что включает композитор.
+    """A mouse event in SGR 1006 format — the one the compositor enables.
 
-    Без этого пробник умеет только клавиатуру, и тогда оболочка обрастает
-    клавиатурными путями, которых в настоящем Windows нет: интерфейс начинает
-    подстраиваться под ограничение инструмента. Координаты — единичные, как на
-    экране.
+    Without it the probe can only use the keyboard, and then the shell grows
+    keyboard paths that real Windows does not have: the interface starts
+    adapting to the tool's limitation. Coordinates are 1-based, as on the
+    screen.
     """
     tail = b"M" if press else b"m"
     return b"\x1b[<%d;%d;%d" % (button, col, row) + tail
 
 
 class Ordered(argparse.Action):
-    """Складывает шаги в ОДИН список в том порядке, в каком их дали.
+    """Collects steps into ONE list in the order they were given.
 
-    Раньше сценарий собирался по типам — сначала все --send, потом ресайзы,
-    потом клавиши, — и «щёлкнуть, потом набрать» выразить было нечем:
-    получалось «набрать, потом щёлкнуть», молча и не тем.
+    The script used to be assembled by type — all --send first, then resizes,
+    then keys — and there was no way to express "click, then type": it came
+    out as "type, then click", silently and wrong.
     """
 
     def __call__(self, parser, namespace, value, option_string=None):
@@ -75,7 +76,7 @@ class Ordered(argparse.Action):
 
 
 class Screen:
-    """Минимальный экран: позиционирование, печать, стирание до конца строки."""
+    """A minimal screen: positioning, printing, erase to end of line."""
 
     def __init__(self, cols, rows):
         self.cols, self.rows = cols, rows
@@ -124,7 +125,7 @@ class Screen:
                     self.grid[self.y][col] = " "
         elif final == b"J" and args and args[0] == 2:
             self.grid = [[" "] * self.cols for _ in range(self.rows)]
-        # SGR, режимы курсора, altscreen и синхронизация содержимого не меняют.
+        # SGR, cursor modes, altscreen and synchronization do not change the content.
 
     def render(self):
         return "\n".join("".join(row).rstrip() for row in self.grid)
@@ -139,38 +140,38 @@ def main():
     parser.add_argument("--cols", type=int, default=100)
     parser.add_argument("--rows", type=int, default=30)
     parser.add_argument("--boot", type=float, default=45.0,
-                        help="сколько ждать первого кадра, секунд")
+                        help="how long to wait for the first frame, seconds")
     parser.add_argument("--settle", type=float, default=2.0,
-                        help="пауза между действиями сценария, секунд")
+                        help="pause between script actions, seconds")
     parser.add_argument("--tail", type=float, default=None,
-                        help="сколько ждать после последнего шага, секунд "
-                             "(по умолчанию — одна пауза; выход всего рантайма "
-                             "занимает заметно дольше)")
+                        help="how long to wait after the last step, seconds "
+                             "(default: one pause; shutting down the whole "
+                             "runtime takes noticeably longer)")
     parser.add_argument("--send", action=Ordered, default=[],
-                        help="набрать строку (повторяемо)")
+                        help="type a string (repeatable)")
     parser.add_argument("--send-key", action=Ordered, default=[],
-                        help="послать клавишу: " + ", ".join(sorted(KEYS)))
+                        help="send a key: " + ", ".join(sorted(KEYS)))
     parser.add_argument("--expect", action="append", default=[],
-                        help="подстрока, которая обязана появиться на экране")
+                        help="a substring that must appear on the screen")
     parser.add_argument("--click", action=Ordered, default=[],
-                        help="щёлкнуть мышью в COL,ROW (единичные координаты)")
+                        help="mouse click at COL,ROW (1-based coordinates)")
     parser.add_argument("--dblclick", action=Ordered, default=[],
-                        help="двойной щелчок в COL,ROW")
+                        help="double click at COL,ROW")
     parser.add_argument("--move", action=Ordered, default=[],
-                        help="провести мышь в COL,ROW без нажатия (SGR 1003, кнопка 35)")
+                        help="move the mouse to COL,ROW without pressing (SGR 1003, button 35)")
     parser.add_argument("--wheel", action=Ordered, default=[],
-                        help="колёсико в COL,ROW,up|down (SGR 1006, кнопки 64 и 65)")
+                        help="mouse wheel at COL,ROW,up|down (SGR 1006, buttons 64 and 65)")
     parser.add_argument("--drag", action=Ordered, default=[],
-                        help="перетаскивание левой кнопкой из COL1,ROW1 в COL2,ROW2: нажатие, движение по строкам, отпускание")
+                        help="drag with the left button from COL1,ROW1 to COL2,ROW2: press, motion row by row, release")
     parser.add_argument("--resize", action=Ordered, default=[],
-                        help="сменить размер терминала на COLSxROWS (повторяемо)")
-    parser.add_argument("--raw", help="файл для сырого потока")
+                        help="resize the terminal to COLSxROWS (repeatable)")
+    parser.add_argument("--raw", help="file for the raw stream")
     parser.add_argument("cmd", nargs=argparse.REMAINDER)
     opts = parser.parse_args()
 
     cmd = opts.cmd[1:] if opts.cmd and opts.cmd[0] == "--" else opts.cmd
     if not cmd:
-        parser.error("команда не задана")
+        parser.error("no command given")
 
     child, fd = pty.fork()
     if child == 0:
@@ -180,12 +181,12 @@ def main():
     screen = Screen(opts.cols, opts.rows)
     raw = open(opts.raw, "wb") if opts.raw else None
 
-    # Сценарий: [(момент, что послать)] в порядке, в каком шаги дали в
-    # командной строке. Первый шаг — после boot.
+    # Script: [(moment, what to send)] in the order the steps were given on
+    # the command line. The first step comes after boot.
     def point(spec, what):
         match = re.fullmatch(r"\s*(\d+)\s*,\s*(\d+)\s*", spec)
         if not match:
-            parser.error(what + " задаётся как COL,ROW, получено: " + spec)
+            parser.error(what + " is given as COL,ROW, got: " + spec)
         return int(match.group(1)), int(match.group(2))
 
     script = []
@@ -195,29 +196,30 @@ def main():
             script.append((moment, value.encode()))
         elif kind == "send_key":
             if value not in KEYS:
-                parser.error("неизвестная клавиша: " + value)
+                parser.error("unknown key: " + value)
             script.append((moment, KEYS[value]))
         elif kind == "click":
-            col, row = point(value, "щелчок")
+            col, row = point(value, "a click")
             script.append((moment, mouse(col, row, press=True) + mouse(col, row, press=False)))
         elif kind == "dblclick":
-            col, row = point(value, "двойной щелчок")
-            # Два полных щелчка подряд одним куском: двойной определяется по
-            # сроку между ними, и пауза сценария между шагами его развалила бы.
+            col, row = point(value, "a double click")
+            # Two full clicks in a row as one chunk: a double click is detected
+            # by the interval between them, and a script pause between steps
+            # would break it.
             single = mouse(col, row, press=True) + mouse(col, row, press=False)
             script.append((moment, single + single))
         elif kind == "move":
-            col, row = point(value, "движение")
-            # Движение без кнопки — код 35 (32 «движение» + 3 «кнопки нет»);
-            # рантайм включает режим 1003, поэтому терминал шлёт его и так.
+            col, row = point(value, "a move")
+            # Motion without a button is code 35 (32 "motion" + 3 "no button");
+            # the runtime enables mode 1003, so the terminal sends it anyway.
             script.append((moment, mouse(col, row, button=35, press=True)))
         elif kind == "drag":
             match = re.fullmatch(r"(\d+),(\d+),(\d+),(\d+)", value)
             if not match:
-                parser.error("перетаскивание задаётся как COL1,ROW1,COL2,ROW2, получено: " + value)
+                parser.error("a drag is given as COL1,ROW1,COL2,ROW2, got: " + value)
             c1, r1, c2, r2 = (int(match.group(i)) for i in range(1, 5))
-            # Одним куском: нажатие, движение с зажатой кнопкой (SGR: кнопка + 32)
-            # по каждой промежуточной строке, отпускание в конечной точке.
+            # As one chunk: press, motion with the button held (SGR: button + 32)
+            # through every intermediate row, release at the end point.
             chunk = mouse(c1, r1, press=True)
             steps = max(abs(r2 - r1), abs(c2 - c1), 1)
             for i in range(1, steps + 1):
@@ -229,14 +231,14 @@ def main():
         elif kind == "wheel":
             match = re.fullmatch(r"(\d+),(\d+),(up|down)", value)
             if not match:
-                parser.error("колёсико задаётся как COL,ROW,up|down, получено: " + value)
+                parser.error("the wheel is given as COL,ROW,up|down, got: " + value)
             button = 64 if match.group(3) == "up" else 65
-            # У колёсика нет отпускания: терминал шлёт только нажатие.
+            # The wheel has no release: the terminal sends only the press.
             script.append((moment, mouse(int(match.group(1)), int(match.group(2)), button=button, press=True)))
         elif kind == "resize":
             match = re.fullmatch(r"(\d+)x(\d+)", value)
             if not match:
-                parser.error("размер задаётся как COLSxROWS, получено: " + value)
+                parser.error("a size is given as COLSxROWS, got: " + value)
             script.append((moment, ("resize", int(match.group(1)), int(match.group(2)))))
         moment += opts.settle
 
@@ -250,8 +252,8 @@ def main():
             if step < len(script) and time.time() - started >= script[step][0]:
                 action = script[step][1]
                 if isinstance(action, tuple):
-                    # Ресайз: ядро само шлёт SIGWINCH группе процессов терминала,
-                    # а экран пересобираем под новый размер.
+                    # Resize: the kernel itself sends SIGWINCH to the terminal's
+                    # process group, and we rebuild the screen for the new size.
                     _, cols, rows = action
                     set_size(fd, cols, rows)
                     screen = Screen(cols, rows)
@@ -273,8 +275,8 @@ def main():
                 raw.write(chunk)
             screen.feed(chunk)
     finally:
-        # Сам ли вышел — единственный способ отличить корректный выход по
-        # ctrl+q от программы, которую пришлось гасить снаружи.
+        # Whether it exited on its own is the only way to tell a clean exit on
+        # ctrl+q from a program that had to be killed from outside.
         exited_on_its_own, exit_code = False, None
         try:
             done_pid, status = os.waitpid(child, os.WNOHANG)
@@ -295,16 +297,16 @@ def main():
     print("=" * opts.cols)
     print(screen.render())
     print("=" * opts.cols)
-    print(f"[probe] прочитано байт: {bytes_seen}, шагов сценария: {step}/{len(script)}")
+    print(f"[probe] bytes read: {bytes_seen}, script steps: {step}/{len(script)}")
     if exited_on_its_own:
-        print(f"[probe] программа завершилась сама, код {exit_code}")
+        print(f"[probe] the program exited on its own, code {exit_code}")
     else:
-        print("[probe] программа не завершилась — пришлось послать SIGTERM")
+        print("[probe] the program did not exit — had to send SIGTERM")
 
     rendered = screen.render()
     failed = [needle for needle in opts.expect if needle not in rendered]
     for needle in opts.expect:
-        print(f"[probe] {'НЕТ ' if needle in failed else 'есть'}: {needle!r}")
+        print(f"[probe] {'MISSING' if needle in failed else 'found  '}: {needle!r}")
     return 1 if failed else 0
 
 

@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""Находит `local`, объявленные ниже функции, которая их читает.
+"""Finds `local`s declared below the function that reads them.
 
-За одну ночь на этом споткнулись пять раз в трёх сессиях, и ни один случай не
-дал отказа. Локальная переменная видна только НИЖЕ своего объявления; выше она
-читается как глобальная, то есть `nil`. Симптомы не похожи ни друг на друга,
-ни на причину: «attempt to call a non-function object», пустая строка вместо
-текста, «композитор перестал отвечать», полоса без надписи, строка, уехавшая
-за край растра.
+In one night this tripped us up five times across three sessions, and not one
+case produced an error. A local variable is visible only BELOW its
+declaration; above it, it is read as a global, that is `nil`. The symptoms
+resemble neither each other nor the cause: "attempt to call a non-function
+object", an empty string instead of text, "the compositor stopped
+responding", a bar without its label, a line that slid past the edge of the
+raster.
 
-`wippy lint` этого не ловит вовсе.
+`wippy lint` does not catch this at all.
 
-Ищутся только объявления УРОВНЯ ФАЙЛА (без отступа): одноимённые локальные
-внутри разных функций — обычное дело и не ошибка. Внутрифункциональные
-объявления той же переменной выше по файлу считаются перекрытием и снимают
-подозрение.
+Only FILE-LEVEL declarations (no indentation) are searched: same-named locals
+inside different functions are normal and not an error. In-function
+declarations of the same variable higher up in the file count as shadowing
+and clear the suspicion.
 
     python3 tools/late-locals.py ../kickside-module ../windows-module
 """
@@ -24,26 +25,26 @@ from pathlib import Path
 DECL = re.compile(r"^local\s+(?:function\s+)?([A-Za-z_][\w]*)\s*[=(]")
 SHADOW = re.compile(r"^\s+local\s+(?:function\s+)?([A-Za-z_][\w]*)\b")
 
-# Использование: имя, за которым идёт обращение — вызов, поле, индекс, метод.
+# A use: a name followed by an access — a call, a field, an index, a method.
 #
-# Слева обязана быть НЕ точка и не двоеточие: `widgets.whole(` — это поле
-# чужой таблицы, а не наша локальная. Без этого условия инструмент считает
-# ошибкой каждое определение метода и тонет в собственном шуме.
+# The left side must NOT be a dot or a colon: `widgets.whole(` is a field of
+# someone else's table, not our local. Without this condition the tool flags
+# every method definition as an error and drowns in its own noise.
 #
-# Обращением считается и голое чтение: `chrome.MENU_BANNER = MENU_BANNER`
-# присваивает nil, и это один из пяти настоящих случаев за ночь. Справа
-# исключено `=` (кроме `==`), иначе ключ таблицы `{name = 1}` читался бы как
-# чтение переменной.
+# A bare read also counts as an access: `chrome.MENU_BANNER = MENU_BANNER`
+# assigns nil, and that was one of the five real cases that night. `=` on the
+# right (except `==`) is excluded, otherwise the table key `{name = 1}` would
+# be read as a read of the variable.
 USE = r"(?<![.:\w])({})\b(?!\s*=[^=])"
 
 STRING = re.compile(r"""("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\[\[.*?\]\])""", re.S)
 
 
 def strip_noise(line: str) -> str:
-    """Убирает строковые литералы и комментарий.
+    """Removes string literals and the comment.
 
-    Иначе `dofile("shell/pixels.lua")` читается как обращение к локальной
-    `pixels`: инструмент, дающий ложные срабатывания, не используется никем.
+    Otherwise `dofile("shell/pixels.lua")` reads as an access to the local
+    `pixels`: a tool that gives false positives is used by nobody.
     """
     line = STRING.sub('""', line)
     comment = line.find("--")
@@ -68,9 +69,9 @@ def scan(path: Path):
                 continue
             shadow = SHADOW.match(line)
             if shadow and shadow.group(1) == name:
-                # Своя локальная внутри функции выше — это не наш случай.
+                # Its own local inside a function above — not our case.
                 break
-            # Определение метода на своей таблице — не использование.
+            # A method definition on its own table is not a use.
             if re.match(r"\s*(?:local\s+)?function\s+[\w.]*\b" + re.escape(name) + r"\b", line):
                 continue
             if pattern.search(strip_noise(line)):
@@ -84,17 +85,17 @@ def main(argv):
     total = 0
     for root in roots:
         for path in sorted(root.rglob("*.lua")):
-            # Проверки и инструменты тоже наши, их не пропускаем: один из пяти
-            # случаев был именно в пробнике.
+            # Tests and tools are ours too, they are not skipped: one of the
+            # five cases was in the probe itself.
             for number, name, declared_at, text in scan(path):
                 total += 1
-                print(f"{path}:{number}: читает {name!r}, объявленную ниже "
-                      f"(строка {declared_at}) — здесь это nil")
+                print(f"{path}:{number}: reads {name!r}, declared below "
+                      f"(line {declared_at}) — it is nil here")
                 print(f"    {text}")
     if total == 0:
-        print("поздних local не найдено")
+        print("no late locals found")
         return 0
-    print(f"\nнайдено: {total}")
+    print(f"\nfound: {total}")
     return 1
 
 
