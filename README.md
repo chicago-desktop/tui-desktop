@@ -1271,3 +1271,13 @@ two signals:
 
 The cleanup after either writes nothing to the terminal that is gone, so the
 desktop ends with success, not with the error of a write nobody could read.
+
+## Empty-desktop context menu
+
+`library.run` accepts `desktop_menu = function() return items, reason end`.
+The callback runs on each right click on empty desktop space. Items use the
+ordinary menu format (`label`, `entry`, optional `args` and `image`) and the normal
+window-opening/identity checks. Errors are shown as desktop notices. Icon and
+widget menus retain their existing behavior. `desktop_properties` remains
+supported when no callback is supplied. Chicago shell adapts registry entries
+with `meta.type: chicago.desktop_menu` to this callback.

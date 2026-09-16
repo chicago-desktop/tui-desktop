@@ -2425,13 +2425,16 @@ local function run(options: any)
                 elseif spot and spot.id then
                     selected_id = spot.id
                     items = context_items(spot)
-                elseif event.y >= desktop_top and event.y <= desktop_last
-                    and type(desktop_properties) == "string" and desktop_properties ~= "" then
-                    -- The empty desktop: the desktop's "Properties", if the
-                    -- shell named a window (`options.desktop_properties`) —
-                    -- as in Windows 95.
+                elseif event.y >= desktop_top and event.y <= desktop_last then
                     selected_id = nil
-                    items = {{label = "Properties", entry = desktop_properties}}
+                    if type(options.desktop_menu) == "function" then
+                        local ok, found, why = pcall(options.desktop_menu)
+                        if ok and type(found) == "table" then items = found end
+                        if not ok then notice = "Desktop menu: " .. tostring(found)
+                        elseif why then notice = tostring(why) end
+                    elseif type(desktop_properties) == "string" and desktop_properties ~= "" then
+                        items = {{label = "Properties", entry = desktop_properties}}
+                    end
                 end
                 if #items > 0 then
                     menu = {items = items, failure = nil, open = {}, cursor = 1,

@@ -50,9 +50,16 @@ local function main(args)
         }, nil
     end
 
+    local reads = {menu = 0}
     local options: any = {
         chrome = pixel_chrome,
-        desktop_properties = "app:menu_target",
+        desktop_menu = function()
+            reads.menu = reads.menu + 1
+            local items = {{label = "Properties", entry = "app:menu_target"},
+                {label = "Another module", entry = "app:menu_target"}}
+            if reads.menu > 1 then items[#items+1] = {label = "Installed later", entry = "app:menu_target"} end
+            return items
+        end,
         service_name = service,
         pixels = true,
         restore = false,

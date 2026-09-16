@@ -1270,14 +1270,19 @@ local function define_tests()
             test.eq(grown.menu_context, false, "after opening, the menu is closed")
 
             -- A right click on the empty desktop gives the desktop's "Properties", since
-            -- the shell named a window (`desktop_properties`); the selection is cleared.
+            -- the shell supplies a dynamic menu; the selection is cleared.
             desk.view:send({type = "mouse", action = "press", button = "right", x = 60, y = 20})
             local bare = wait_context(true)
             test.eq(bare.menu_context, true, "on the empty desktop — desktop properties")
-            test.eq(math.tointeger(bare.menu_choices) or 0, 1)
+            test.eq(math.tointeger(bare.menu_choices) or 0, 2)
             test.eq(bare.selected, nil, "a click on the empty desktop clears the selection")
             test.is_true((math.tointeger(bare.cell.w) or 0) > 0, "desktop.list names the cell size")
             test.eq(bare.pixels, true, "and the frame mode")
+            press(desk, "esc")
+            wait_context(false)
+            desk.view:send({type = "mouse", action = "press", button = "right", x = 60, y = 20})
+            local refreshed = wait_context(true)
+            test.eq(math.tointeger(refreshed.menu_choices) or 0, 3, "contributions refresh each time the menu opens")
             press(desk, "esc")
             wait_context(false)
 
