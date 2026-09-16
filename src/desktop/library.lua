@@ -1798,6 +1798,7 @@ local function run(options: any)
                 entry = entry,
                 window_type = window_type,
                 presentation = presentation,
+                presentation_interactive = presentation and declared.presentation_interactive == true,
                 opened_by = opener and opener.id or nil,
                 title = type(spec.title) == "string" and spec.title ~= "" and spec.title
                     or (declared and declared.title or entry),
@@ -1884,6 +1885,7 @@ local function run(options: any)
             -- only carries it from the entry to the theme.
             window_type = window_type,
             presentation = presentation,
+            presentation_interactive = presentation and declared.presentation_interactive == true,
             -- Who opened it. For a dialog and a tool window this is its
             -- window — hence the shared z and the shared close. For an
             -- ordinary program it is just a trace: who launched it.
@@ -2188,7 +2190,8 @@ local function run(options: any)
     local client_capture: any = nil
     local function client_pointer(window: any, event: any)
         return send_to(window, {type = "mouse", action = event.action, button = event.button,
-            x = event.x - window.x - insets.left + 1, y = event.y - window.y - insets.top + 1,
+            x = event.x - window.x - (window.presentation and 0 or insets.left) + 1,
+            y = event.y - window.y - (window.presentation and 0 or insets.top) + 1,
             alt = event.alt, ctrl = event.ctrl, shift = event.shift})
     end
     -- Plain motion — no button held, nothing captured — goes to the focused
@@ -2306,6 +2309,10 @@ local function run(options: any)
         local moved = pointer.x ~= nil and (event.x ~= pointer.x or event.y ~= pointer.y)
         pointer.x,pointer.y = event.x,event.y
         if top and top.presentation then
+            if top.presentation_interactive then
+                client_pointer(top, event)
+                return
+            end
             -- The release that opened a preview and duplicate pointer reports
             -- do not dismiss it. The closing gesture never reaches its parent.
             if event.action == "press" or event.action == "wheel" or (event.action == "motion" and moved) then
@@ -2834,6 +2841,8 @@ local function run(options: any)
     local function handle_key(event)
         local top = focused()
         if top and top.presentation then
+            -- Interactive presentations own input; Esc always returns to the desktop.
+            if top.presentation_interactive and event.key_type ~= "esc" then return "forward" end
             if event.action ~= "release" then top.minimized = true; close_window(top,"force"); draw() end
             return "handled"
         end
@@ -2994,6 +3003,7 @@ local function run(options: any)
             ready = window.ready, minimized = window.minimized,
             maximized = window.maximized, closing = window.closing,
             presentation = window.presentation == true,
+            presentation_interactive = window.presentation_interactive == true,
             -- A flashing window (`desktop.flash`) and which look it shows now.
             flashing = window.flashing == true, flash_lit = window.flash_lit == true,
         }

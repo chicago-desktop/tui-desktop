@@ -722,3 +722,10 @@ entries:
     meta: {type: test, suite: chicago_tui_desktop, group: Presentation}
     imports:
       test: wippy.test:test
+
+  - name: interactive_presentation_window
+    kind: process.lua
+    source: file://interactive_presentation_window.lua
+    method: main
+    modules: [channel, tty]
+    meta: {type: tui_desktop.window, title: Game, in_menu: false, presentation: true, presentation_interactive: true}

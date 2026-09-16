@@ -122,6 +122,7 @@ function programs.item(record: any)
         window_type = window_type,
         in_menu = programs.in_menu(meta),
         presentation = meta.presentation == true,
+        presentation_interactive = meta.presentation == true and meta.presentation_interactive == true,
         -- What draws the content and what it lives on. `render` is a pure
         -- drawing library, `state` is a provider process with its own actor:
         -- drawing in the compositor, permissions outside.

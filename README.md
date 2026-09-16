@@ -1292,3 +1292,14 @@ A presentation follows its opener's lifetime. This is a passive preview mode,
 not an idle detector or lock screen. Pixel themes opt in with
 `chrome.presentation = true` and paint the `state.presentation` window without
 chrome; unsupported pixel themes report a refusal. Cell mode needs no theme hook.
+
+### Interactive full-screen windows
+
+With tui-desktop 0.2.4 or newer, add `meta.presentation_interactive: true`
+alongside `meta.presentation: true` for games and other interactive full-screen
+content. Keys and client mouse events go to the window; desktop shortcuts are
+suppressed. **Esc** closes it and restores the underlying desktop. Key releases
+do not dismiss it. The full viewport follows terminal resize and the window
+follows its opener's lifetime, just like a passive presentation. Existing
+presentations without this flag still dismiss on input. Use this mode only when
+closing on Esc can safely discard the current activity.
