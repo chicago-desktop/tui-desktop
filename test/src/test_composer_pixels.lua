@@ -97,6 +97,9 @@ local function main(args)
     elseif kind == "flat" then
         options.chrome = flat_chrome
         options.cell_size = function() return 10, 20 end
+    elseif kind == "presentation_cells" then
+        options.pixels = false
+        options.chrome = cell_chrome
     elseif kind == "cells_theme" then
         options.chrome = cell_chrome
         options.cell_size = function() return 10, 20 end

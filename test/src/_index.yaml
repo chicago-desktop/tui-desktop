@@ -707,3 +707,18 @@ entries:
     imports:
       test: wippy.test:test
     method: run
+
+  - name: presentation_window
+    kind: process.lua
+    source: file://painter_window.lua
+    method: main
+    modules: [channel, time, tty]
+    meta: {type: tui_desktop.window, title: Preview, in_menu: false, presentation: true}
+  - name: presentation_test
+    kind: function.lua
+    source: file://presentation_test.lua
+    method: run
+    modules: [channel, process, time, tty]
+    meta: {type: test, suite: chicago_tui_desktop, group: Presentation}
+    imports:
+      test: wippy.test:test

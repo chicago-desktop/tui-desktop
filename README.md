@@ -1281,3 +1281,14 @@ window-opening/identity checks. Errors are shown as desktop notices. Icon and
 widget menus retain their existing behavior. `desktop_properties` remains
 supported when no callback is supplied. Chicago shell adapts registry entries
 with `meta.type: chicago.desktop_menu` to this callback.
+
+## Full-screen passive previews
+
+Window metadata `presentation: true` requests a borderless full-terminal client,
+including the taskbar rows. The compositor maintains the viewport on resize,
+consumes a dismissing key/mouse gesture and closes the preview, restoring the
+underlying desktop. It ignores the opening release and duplicate pointer reports.
+A presentation follows its opener's lifetime. This is a passive preview mode,
+not an idle detector or lock screen. Pixel themes opt in with
+`chrome.presentation = true` and paint the `state.presentation` window without
+chrome; unsupported pixel themes report a refusal. Cell mode needs no theme hook.

@@ -147,7 +147,9 @@ chrome.FOLDER = "Programs"
 -- One piece for each window's title and one for the taskbar — the same as the
 -- real one will have: cut by rows, so that typing in a window does not
 -- resend the whole chrome.
+chrome.presentation = true
 function chrome.paint(state: any, cell_w, cell_h)
+    if state.presentation then return {placements={},hits={desktop={},bars={},menu={}}} end
     if zoom_cell then
         assert(cell_w == zoom_cell.w and cell_h == zoom_cell.h,
             "paint received stale cell dimensions after font zoom")

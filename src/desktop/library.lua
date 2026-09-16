@@ -574,6 +574,7 @@ local function run(options: any)
     -- Double click: as in the shell the look is taken from. A single click that
     -- launches a program is a trap: people click an icon to select it.
     local last_click: any = {x = 0, y = 0, at = 0}
+    local pointer: any = {x = nil, y = nil}
     -- The selection lives here, not in the layout: every click changes it, and
     -- the layout is what survives a restart.
     local selected_id: any = nil
@@ -1087,7 +1088,7 @@ local function run(options: any)
     -- "My Computer", having opened a viewer, must not take it away with it.
     local function follows_parent(window: any)
         local kind: any = window and window.window_type or nil
-        return kind == "dialog" or kind == "tool"
+        return kind == "dialog" or kind == "tool" or (window and window.presentation == true)
     end
 
     local function children_of(id)
@@ -1297,12 +1298,12 @@ local function run(options: any)
     -- nobody else to lay them.
     local function put_content(window)
         if type(window.rows) ~= "table" or #window.rows == 0 then return end
-        local left = math.tointeger(insets.left) or 1
-        local top_inset = math.tointeger(insets.top) or 1
+        local left = window.presentation and 0 or (math.tointeger(insets.left) or 1)
+        local top_inset = window.presentation and 0 or (math.tointeger(insets.top) or 1)
         local x = (math.tointeger(window.x) or 1) + left
         local y = (math.tointeger(window.y) or 1) + top_inset
-        local span = (math.tointeger(window.w) or 0) - FRAME_W
-        local room = (math.tointeger(window.h) or 0) - FRAME_H
+        local span = (math.tointeger(window.w) or 0) - (window.presentation and 0 or FRAME_W)
+        local room = (math.tointeger(window.h) or 0) - (window.presentation and 0 or FRAME_H)
         if span < 1 or room < 1 then return end
 
         -- Extra rows are cut here, as in the character theme: at the moment
@@ -1450,7 +1451,11 @@ local function run(options: any)
         local widget_list: any = widget_view(false)
 
         desk_hits = {}
-        if not PIXELS then
+        local presenting = top ~= nil and top.presentation == true
+        if presenting then
+            bar_hits,menu_hits = {},{}
+            put_content(top)
+        elseif not PIXELS then
             -- The background also draws the desktop icons, if the theme can:
             -- the compositor gives it the layout and the bounds of the free
             -- space, and takes back the hit layout — the click is computed
@@ -1520,6 +1525,7 @@ local function run(options: any)
                 width = width, height = height,
                 top = desktop_top, bottom = desktop_last,
                 windows = windows, focused_id = focused_id,
+                presentation = presenting and top or nil,
                 items = desk.items, failure = desk.failure, selected = selected_id,
                 menu = menu and {items = menu.items, failure = menu.failure,
                     open = menu.open, cursor = menu.cursor, anchor = menu.anchor} or nil,
@@ -1555,7 +1561,7 @@ local function run(options: any)
             -- looks like "the mouse does not work", not like "the theme
             -- returned hits in the wrong shape".
             if #complaints > 0 then notice = tostring(complaints[1]) end
-        else
+        elseif not presenting then
             bar_hits = chrome.bars(canvas, width, height, {
                 windows = windows,
                 focused_id = focused_id,
@@ -1598,7 +1604,7 @@ local function run(options: any)
         -- gets it — and offset by its frame, otherwise it would stand a row
         -- above its own text.
         local cursor = nil
-        if top and top.cursor then
+        if top and top.cursor and not presenting then
             cursor = {
                 x = clamp(top.x + (math.tointeger(insets.left) or 1) - 1 + top.cursor.x, 1, width),
                 y = clamp(top.y + (math.tointeger(insets.top) or 1) - 1 + top.cursor.y, 1, height),
@@ -1720,6 +1726,11 @@ local function run(options: any)
             end
         end
 
+        local presentation = declared ~= nil and declared.presentation == true
+        if presentation and PIXELS and chrome.presentation ~= true then
+            return nil, "This theme does not support full-screen presentations"
+        end
+
         -- Size: for a fixed-size window — ONLY from the entry, whatever the
         -- opener asks for; otherwise a clock opened from the taskbar without
         -- a size would take the whole desktop with the dialog in a corner.
@@ -1750,6 +1761,9 @@ local function run(options: any)
             x = clamp(ox + (ow - w) // 2, 1, math.max(1, width - w + 1))
             y = clamp(oy + (oh - h) // 2, desktop_top, math.max(desktop_top, height - h))
         end
+
+        if presentation then x,y,w,h = 1,1,width,height end
+        local frame_w,frame_h = presentation and 0 or FRAME_W,presentation and 0 or FRAME_H
 
         -- A view window: there is no process inside at all. The theme draws
         -- it by calling the pure library `render`; the data is obtained by a
@@ -1783,6 +1797,7 @@ local function run(options: any)
                 id = "w" .. next_id,
                 entry = entry,
                 window_type = window_type,
+                presentation = presentation,
                 opened_by = opener and opener.id or nil,
                 title = type(spec.title) == "string" and spec.title ~= "" and spec.title
                     or (declared and declared.title or entry),
@@ -1816,7 +1831,7 @@ local function run(options: any)
                 local state_pid, serr = spawner(nil, {[window_api.CONTEXT_KEY] = SERVICE_NAME})
                     :spawn_monitored(tostring(state_ref), WINDOW_HOST, SERVICE_NAME, tostring(view_window.id),
                         type(spec.args) == "string" and spec.args ~= "" and spec.args or nil, {
-                            width = w - FRAME_W, height = h - FRAME_H,
+                            width = w - frame_w, height = h - frame_h,
                             cell_w = cell_w, cell_h = cell_h,
                         })
                 if not state_pid then
@@ -1830,7 +1845,7 @@ local function run(options: any)
             return view_window, nil
         end
 
-        local view, verr = tty.viewport({width = w - FRAME_W, height = h - FRAME_H})
+        local view, verr = tty.viewport({width = w - frame_w, height = h - frame_h})
         if not view then return nil, tostring(verr) end
 
         local updates, uerr = view:updates()
@@ -1868,6 +1883,7 @@ local function run(options: any)
             -- The theme picks the set of title buttons by it; the compositor
             -- only carries it from the entry to the theme.
             window_type = window_type,
+            presentation = presentation,
             -- Who opened it. For a dialog and a tool window this is its
             -- window — hence the shared z and the shared close. For an
             -- ordinary program it is just a trace: who launched it.
@@ -2045,6 +2061,7 @@ local function run(options: any)
     -- clamped to the screen. One rule for the resize itself and for the
     -- outline a resize drag shows before its release.
     local function resized_rect(window, w: any, h: any): any
+        if window.presentation then return {x=1,y=1,w=width,h=height} end
         local nw = clamp(tonumber(w) or window.w, MIN_W, width)
         local nh = clamp(tonumber(h) or window.h, MIN_H, desktop_height())
         return {w = nw, h = nh, x = clamp(window.x, 1, math.max(1, width - nw + 1)),
@@ -2057,10 +2074,10 @@ local function run(options: any)
         -- A view has no viewport: its size is just numbers the theme draws by
         -- in the next frame.
         if window.view then
-            window.view:resize(window.w - FRAME_W, window.h - FRAME_H)
+            window.view:resize(window.w - (window.presentation and 0 or FRAME_W), window.h - (window.presentation and 0 or FRAME_H))
         elseif window.state_pid then
             process.send(tostring(window.state_pid), "window.input", {id = window.id, event = {
-                type = "resize", width = window.w - FRAME_W, height = window.h - FRAME_H,
+                type = "resize", width = window.w - (window.presentation and 0 or FRAME_W), height = window.h - (window.presentation and 0 or FRAME_H),
                 cell_w = cell_w, cell_h = cell_h,
             }})
         end
@@ -2285,6 +2302,19 @@ local function run(options: any)
     end
 
     local function handle_mouse(event)
+        local top = focused()
+        local moved = pointer.x ~= nil and (event.x ~= pointer.x or event.y ~= pointer.y)
+        pointer.x,pointer.y = event.x,event.y
+        if top and top.presentation then
+            -- The release that opened a preview and duplicate pointer reports
+            -- do not dismiss it. The closing gesture never reaches its parent.
+            if event.action == "press" or event.action == "wheel" or (event.action == "motion" and moved) then
+                top.minimized = true
+                close_window(top,"force")
+                draw()
+            end
+            return
+        end
         if client_capture and (event.action == "motion" or event.action == "release") then
             local target = find(client_capture)
             if target and not target.minimized then client_pointer(target, event) end
@@ -2802,6 +2832,11 @@ local function run(options: any)
     end
 
     local function handle_key(event)
+        local top = focused()
+        if top and top.presentation then
+            if event.action ~= "release" then top.minimized = true; close_window(top,"force"); draw() end
+            return "handled"
+        end
         if event.ctrl and event.key == "q" then
             request_quit()
             if #windows == 0 then return "quit" end
@@ -2958,6 +2993,7 @@ local function run(options: any)
             x = window.x, y = window.y, width = window.w, height = window.h,
             ready = window.ready, minimized = window.minimized,
             maximized = window.maximized, closing = window.closing,
+            presentation = window.presentation == true,
             -- A flashing window (`desktop.flash`) and which look it shows now.
             flashing = window.flashing == true, flash_lit = window.flash_lit == true,
         }
