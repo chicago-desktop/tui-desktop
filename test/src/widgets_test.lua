@@ -143,7 +143,7 @@ end
 
 local function define_tests()
     test.describe("desktop widgets", function()
-        test.it("spawns the listed widgets in order and refuses a bad size by its entry", function()
+        test.it("spawns the listed instances in order", function()
             local desk = boot("chicago.tui_desktop.test.widgets.spawn", "widgets")
 
             local listing = wait_listing(desk, both_live, "both widgets published their first state")
@@ -160,10 +160,6 @@ local function define_tests()
             test.eq(beta.stopped, false)
             test.eq(math.tointeger(alpha.revision) or -1, 1, "one state published, one revision")
             test.is_nil(alpha.content_state, "the tree is what is drawn, not a status")
-            local notice = tostring(listing.notice)
-            test.is_true(notice:find("app:widget_wide", 1, true) ~= nil
-                and notice:find("from 10 to 40", 1, true) ~= nil,
-                "a refused size names the entry and the limit: [" .. notice .. "]")
 
             -- The theme's `fill` got the list in display order, each with the
             -- state its process published — a state that names the id, the
@@ -208,8 +204,8 @@ local function define_tests()
             -- desktop.refresh follows the new list: beta comes back under its
             -- id, gamma is new, alpha is stopped and forgotten.
             process.send(desk.service, "test.widgets", {widgets = {
-                {entry = "app:widget_beta", title = "Beta", w = 12, h = 3, order = 10},
-                {entry = "app:widget_gamma", title = "Gamma", w = 16, h = 2, order = 15},
+                {instance = "app:widget_beta", entry = "app:widget_beta", title = "Beta", w = 12, h = 3, order = 10},
+                {instance = "app:widget_gamma", entry = "app:widget_gamma", title = "Gamma", w = 16, h = 2, order = 15},
             }})
             test.is_true(ask(desk, "desktop.refresh", {}).ok == true)
             local after = wait_listing(desk, function(at: any)
@@ -228,6 +224,80 @@ local function define_tests()
             end
             test.is_true(gone, "the process of a vanished widget is stopped")
             test.not_nil(process.registry.lookup(prefix .. "g1"), "beta runs again")
+            shut(desk)
+        end)
+
+        test.it("reconciles independent instances, preserves resize and read failures, and replaces config", function()
+            local desk = boot("chicago.tui_desktop.test.widgets.instances", "widgets")
+            wait_listing(desk, both_live, "initial widgets")
+            local function set(list: any, failure: any): any
+                process.send(desk.service, "test.widgets", {widgets = list, failure = failure})
+                return ask(desk, "desktop.refresh", {})
+            end
+            local function spec(id: string, value: string, width: integer): any
+                return {instance = id, entry = "app:widget_alpha", w = width, h = 4, config = {value = value}}
+            end
+            test.is_true(set({spec("app:left", "left", 20), spec("app:right", "right", 20)}).ok)
+            local first = wait_listing(desk, both_live, "two copies published")
+            test.eq(first.widgets[1].instance, "app:left")
+            test.eq(first.widgets[2].instance, "app:right")
+            test.is_true(first.widgets[1].pid ~= first.widgets[2].pid, "separate processes")
+            local left, right = first.widgets[1], first.widgets[2]
+            wait_row(desk, 14, "#1:left|live", "left receives its own config")
+            wait_row(desk, 15, "#1:right|live", "right receives its own config")
+            test.is_true(set({spec("app:left", "left", 24), spec("app:right", "right", 20)}).ok)
+            local resized = wait_listing(desk, function(at: any)
+                return at.widgets[1].w == 24 and at.widgets[1].revision >= 2
+            end, "resize delivered")
+            test.eq(resized.widgets[1].pid, left.pid, "resize keeps process")
+            test.eq(resized.widgets[2].pid, right.pid, "unrelated process stays")
+            wait_row(desk, 14, "24x4@10x20#2:left|live", "provider sees new geometry")
+            test.is_true(set({}, "registry unavailable").ok == false)
+            test.eq(listed(desk).widgets[1].pid, left.pid, "failed read preserves composition")
+            test.is_true(set({spec("app:left", "left", 41)}).ok == false)
+            test.eq(#listed(desk).widgets, 2, "invalid size preserves composition")
+            test.is_true(set({spec("app:left", "changed", 24), spec("app:right", "right", 20)}).ok)
+            local changed = wait_listing(desk, both_live, "changed config published")
+            test.eq(changed.widgets[1].instance, left.instance, "stable identity")
+            test.is_true(changed.widgets[1].pid ~= left.pid, "config replaces only affected process")
+            test.eq(changed.widgets[2].pid, right.pid)
+            wait_row(desk, 14, "#1:changed|live", "replacement receives updated config")
+            test.is_true(set({spec("app:right", "right", 20)}).ok)
+            local removed = listed(desk)
+            test.eq(#removed.widgets, 1)
+            test.eq(removed.widgets[1].pid, right.pid)
+            test.is_true(set({}).ok)
+            test.eq(#listed(desk).widgets, 0, "valid empty composition removes all")
+            pause("200ms")
+            test.is_nil(process.registry.lookup(desk.service .. ".widget." .. right.id), "SDK close releases process")
+            shut(desk)
+        end)
+
+        test.it("delivers effective content geometry and reports theme visibility without stopping hidden providers", function()
+            local desk = boot("chicago.tui_desktop.test.widgets.geometry", "sized_widgets")
+            local first = wait_listing(desk, both_live, "initial content sizes")
+            test.eq(first.widgets[1].content_width, 10)
+            test.eq(first.widgets[1].content_height, 1)
+            test.eq(first.widgets[1].visible, true)
+            test.eq(first.widgets[2].visible, false)
+            test.not_nil(first.widgets[2].pid, "hidden providers remain independent live processes")
+            wait_row(desk, 14, "g1:10x1@10x20#1|live", "spawn uses theme content dimensions")
+            process.send(desk.service, "test.widgets", {widgets = {
+                {instance = "app:widget_beta", entry = "app:widget_beta", w = 40, h = 8},
+            }})
+            test.is_true(ask(desk, "desktop.refresh", {}).ok)
+            local resized = wait_listing(desk, function(at: any)
+                return #at.widgets == 1 and at.widgets[1].revision >= 2
+            end, "instance resize")
+            test.eq(resized.widgets[1].pid, first.widgets[1].pid)
+            test.eq(resized.widgets[1].w, 40, "requested width remains observable")
+            test.eq(resized.widgets[1].rendered_width, 26)
+            test.eq(resized.widgets[1].content_width, 24)
+            wait_row(desk, 14, "g1:24x6@10x20#2|live", "resize uses actual content dimensions")
+            desk.view:resize(60, 24)
+            local narrowed = wait_listing(desk, function(at: any) return at.screen.width == 60 end, "terminal resize")
+            test.eq(narrowed.widgets[1].content_width, 18)
+            test.eq(narrowed.widgets[1].pid, first.widgets[1].pid)
             shut(desk)
         end)
 

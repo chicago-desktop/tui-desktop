@@ -24,7 +24,7 @@ local function main(desktop, widget_id, args: any, geometry: any)
             id = tostring(widget_id),
             state = {note = tostring(widget_id) .. ":" .. tostring(size.width) .. "x" .. tostring(size.height)
                 .. "@" .. tostring(size.cell_w) .. "x" .. tostring(size.cell_h)
-                .. "#" .. tostring(counter.published)},
+                .. "#" .. tostring(counter.published) .. (type(args) == "table" and args.value and ":" .. tostring(args.value) or "")},
         })
     end
 
@@ -34,6 +34,16 @@ local function main(desktop, widget_id, args: any, geometry: any)
         if not picked.ok or picked.channel ~= inbox then break end
         local topic = picked.value:topic()
         if topic == "probe.publish" then publish() end
+        if topic == "window.input" then
+            local body: any = picked.value:payload()
+            if type(body) == "userdata" then body = body:data() end
+            local event: any = body.event
+            if event and event.type == "close" then break end
+            if event and event.type == "resize" then
+                for key, value in pairs(event) do size[key] = value end
+                publish()
+            end
+        end
         -- What the SDK runner sends when its loop ends: a close of its own id,
         -- without a reply address. The probe stays alive after it, so the test
         -- sees what the close does, not what the exit does.

@@ -752,59 +752,41 @@ Otherwise windows would slide off the edge silently.
 
 ## Desktop widgets
 
-A desktop widget (FR-006 in `chicago/shell`) is a view window without the
-window: a registry entry whose process the compositor spawns like the state
-provider of a view window, and whose published state the theme draws in a
-panel on the desktop, under every window. The base discovers nothing and
-draws nothing: the shell lists the entries, the theme draws them.
+The shell owns definition/instance discovery and rendering; the base owns one
+independent provider process per enabled instance per desktop session. The
+canonical [Widgets SDK contract](https://github.com/chicago-desktop/shell/blob/master/docs/sdk.md#desktop-widgets) documents
+registry fields, migration and geometry. The provider seam is:
 
 ```lua
-local ok, err = library.run({
-    chrome = theme,
-    -- The shell reads the registry (meta.type: chicago.widget) and hands the list over.
-    widgets = function()
-        return {{entry = "app.monitor:memory", title = "Memory", w = 20, h = 6,
-                 order = 20, opens = "chicago.shell.taskman:window"}}, nil
-    end,
-})
+widgets = function()
+    return {{instance = "app.widgets:memory", entry = "app.monitor:memory",
+        title = "Memory", w = 20, h = 8, order = 20, config = {}}}, nil
+end
 ```
 
-- **Lifecycle.** The list is read after logon — so every widget runs under the
-  logged-on user, like a window — and again on `desktop.refresh`. New entries
-  are spawned, entries that vanished are stopped and forgotten, stopped ones
-  are spawned again. Order: `order` (default 100), then the entry id. Ids are
-  `g<n>` in the order of spawning; a respawned widget keeps its id. A provider
-  that answers no list at all changes nothing: a registry hiccup must not
-  blank the desktop.
-- **Spawn.** `spawn_monitored(entry, workers host, compositor name, widget id,
-  nil, {width, height, cell_w, cell_h})` — the call of a view window's state
-  provider, with the compositor's name in the context. `width` and `height`
-  are the widget's cells. A terminal resize and a changed size send the
-  process a `resize` event on `window.input`, as a provider gets it.
-- **Size.** `w` 10..40 and `h` 2..16 whole cells, 20×5 when not given.
-  Outside the limits the widget is not spawned and not clamped — a tree laid
-  out for another size would be another widget; the status line names the
-  entry and the limit.
-- **State.** The process publishes through `desktop.state` with its widget id,
-  exactly as a view window's provider does, and only from the pid the
-  compositor spawned for that widget: nobody else can draw into it. Each state
-  bumps `state_revision` and redraws.
-- **Stopped.** A widget whose process exits keeps its last state and gets
-  `stopped = true`; the status line names the entry. `desktop.refresh` spawns
-  it again.
-- **Theme.** Both `fill` (cells) and `paint` (pixels) get `state.widgets`, a
-  list in display order of `{id, entry, title, opens, w, h, waiting, stopped,
-  content_state, state_revision}` — a view window's shape, so the SDK renderer
-  takes a widget as it is. `waiting` stays true until the first state. The
-  stock theme of this module does not draw widgets.
-- **Hits.** A theme gives one record per widget row in `hits.desktop`: an icon
-  row plus `widget = <id>`, with `entry` naming what a click opens (`opens`). A
-  left press opens that window or raises the one already open, like a tray
-  item — no selection, no drag, no double click. A right press offers Open,
-  and without an entry nothing at all (not the desktop's Properties). The
-  arrow keys walk icons only and skip widget records.
-- **Status.** `desktop.list` returns `widgets = {{id, entry, title, opens, w,
-  h, revision, waiting, stopped}}` — without the tree.
+`instance` is required and unique, independently of `entry`. Reconciliation sorts
+by order then instance. It runs after logon and on `desktop.refresh`: unchanged
+instances keep their PID, resize sends `window.input`, config/entry changes replace
+only the affected provider, and removed providers receive close with a 3-second
+termination deadline. Invalid lists/read errors preserve the running composition;
+a valid empty list removes all. Stopped providers retry on refresh.
+
+The spawn arguments are compositor name, transient widget ID, config, geometry.
+The optional theme `widget_layout(list, width, top, bottom)` returns the same
+placements it draws; status uses it to report visibility and effective outer
+rectangles. Hidden instances keep running.
+The optional theme `widget_geometry(widget, screen_width)` supplies content width
+and height; otherwise the full outer size is content. Geometry includes cell size
+and is sent again on screen/instance resize. Outer limits remain 10..40 × 2..16.
+
+Only the current provider PID can send state/close for its widget. Replacement
+uses a fresh transient ID; instance identity stays stable. Both renderers receive
+`state.widgets` with instance, id, entry, title, opens, outer w/h, waiting/stopped,
+content_state and state_revision. Existing passive widget hit behavior is unchanged.
+
+`desktop.list` includes instance and PID plus actual content dimensions, without
+configuration or trees. It exposes `widget_failure`; refresh returns an error when
+widget reconciliation fails. See the SDK for exact lifecycle and migration rules.
 
 ## Pixel chrome: frames as pictures, contents as characters
 

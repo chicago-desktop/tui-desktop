@@ -248,7 +248,7 @@ end
 -- — (screen) -> identity | nil, reason. Logon before the first frame:
 -- identity = {actor, scope, context}, and every window is spawned under it.
 -- Details in README.
---   options.widgets       — () -> {{entry, title, w, h, order, opens}, …}, failure:
+--   options.widgets       — () -> {{instance, entry, title, w, h, order, opens, config}, …}, failure:
 --                           desktop widgets to spawn (README, "Desktop widgets").
 local function run(options: any)
     options = type(options) == "table" and options or {}
@@ -357,7 +357,7 @@ local function run(options: any)
     -- The properties window of the desktop itself — the "Properties" item on a
     -- right click on an empty spot. An entry id; none — no menu either.
     local desktop_properties: any = type(options.desktop_properties) == "string" and options.desktop_properties or nil
-    -- Desktop widgets (FR-006): `() -> {{entry, title, w, h, order, opens}, …}, failure`.
+    -- Desktop widgets (FR-006): `() -> {{instance, entry, title, w, h, order, opens, config}, …}, failure`.
     -- The shell reads the registry and hands the list over, as it does for
     -- desktop items; the base spawns the entries and draws nothing.
     local read_widgets: any = type(options.widgets) == "function" and options.widgets or nil
@@ -876,7 +876,7 @@ local function run(options: any)
 
     -- Running widgets in display order. A table, like `tray`: the logon pcall
     -- sits above in this frame, and `sync_widgets` replaces the list.
-    local widgets: any = {items = {}, spawned = 0}
+    local widgets: any = {items = {}, spawned = 0, retired = {}, failure = nil}
 
     -- What widgets give the theme and the command channel. The theme gets a
     -- view window's shape (`id`, `content_state`, `state_revision`) so the
@@ -885,15 +885,31 @@ local function run(options: any)
     local function widget_view(detailed: boolean): any
         local out = {}
         for _, item in ipairs(widgets.items) do
-            local view: any = {id = item.id, entry = item.entry, title = item.title, opens = item.opens,
+            local view: any = {id = item.id, instance = item.instance, entry = item.entry, title = item.title, opens = item.opens,
                 w = item.w, h = item.h, waiting = item.waiting == true, stopped = item.stopped == true}
             if detailed then
                 view.revision = item.state_revision
+                view.pid = item.pid and tostring(item.pid) or nil
+                view.content_width, view.content_height = item.content_width, item.content_height
             else
                 view.content_state = item.content_state
                 view.state_revision = item.state_revision
             end
             out[#out + 1] = view
+        end
+        if detailed and type(chrome.widget_layout) == "function" then
+            local visible: any = {}
+            for _, spot in ipairs(chrome.widget_layout(out, width, desktop_top, desktop_last)) do
+                visible[spot.id] = spot
+            end
+            for _, item in ipairs(out) do
+                local spot: any = visible[item.id]
+                item.visible = spot ~= nil
+                if spot then
+                    item.x, item.y = spot.x, spot.y
+                    item.rendered_width, item.rendered_height = spot.w, spot.h
+                end
+            end
         end
         return out
     end
@@ -925,13 +941,46 @@ local function run(options: any)
         return cells
     end
 
-    -- A widget's size and the cell size reach its process as the resize event
-    -- a state provider of a view window gets.
+    -- The theme owns the frame inset and screen-width constraint. Providers
+    -- receive the actual content rectangle, never the requested outer size.
+    function widgets.geometry(item: any): any
+        local result: any = {width = item.w, height = item.h}
+        if type(chrome.widget_geometry) == "function" then result = chrome.widget_geometry(item, width) end
+        item.content_width, item.content_height = result.width, result.height
+        result.cell_w, result.cell_h = cell_w, cell_h
+        return result
+    end
+
     local function tell_widget_size(item: any)
+        local geometry: any = widgets.geometry(item)
         if item.pid == nil then return end
-        process.send(tostring(item.pid), "window.input", {id = item.id, event = {
-            type = "resize", width = item.w, height = item.h, cell_w = cell_w, cell_h = cell_h,
-        }})
+        geometry.type = "resize"
+        process.send(tostring(item.pid), "window.input", {id = item.id, event = geometry})
+    end
+
+    function widgets.equal(a: any, b: any): boolean
+        if type(a) ~= type(b) then return false end
+        if type(a) ~= "table" then return a == b end
+        for key, value in pairs(a) do if not widgets.equal(value, b[key]) then return false end end
+        for key, _ in pairs(b) do if a[key] == nil then return false end end
+        return true
+    end
+
+    function widgets.copy(value: any): any
+        if type(value) ~= "table" then return value end
+        local result: any = {}
+        for key, child in pairs(value) do result[key] = widgets.copy(child) end
+        return result
+    end
+
+    -- Removed/replaced providers get the SDK close event and a bounded grace.
+    -- Detach immediately so a late publication cannot overwrite a replacement.
+    function widgets.retire(item: any)
+        if item.pid == nil then return end
+        local pid = tostring(item.pid)
+        process.send(pid, "window.input", {id = item.id, event = {type = "close"}})
+        widgets.retired[pid] = time.after(CLOSE_GRACE)
+        item.pid = nil
     end
 
     -- Spawned exactly like the state provider of a view window: under the
@@ -940,9 +989,7 @@ local function run(options: any)
     -- reason when the spawn failed.
     local function spawn_widget(item: any): string?
         local pid, err = spawner(nil, {[window_api.CONTEXT_KEY] = SERVICE_NAME})
-            :spawn_monitored(tostring(item.entry), WINDOW_HOST, SERVICE_NAME, tostring(item.id), nil, {
-                width = item.w, height = item.h, cell_w = cell_w, cell_h = cell_h,
-            })
+            :spawn_monitored(tostring(item.entry), WINDOW_HOST, SERVICE_NAME, tostring(item.id), item.config, widgets.geometry(item))
         if not pid then
             item.pid, item.stopped = nil, true
             return "widget " .. tostring(item.entry) .. " did not start: " .. tostring(err)
@@ -964,54 +1011,64 @@ local function run(options: any)
     local function sync_widgets()
         if not read_widgets then return end
         local listed, failure = read_widgets()
-        local problems = {}
-        if failure ~= nil then problems[#problems + 1] = "widgets: " .. tostring(failure) end
-        if type(listed) ~= "table" then
-            -- No list is not an empty list: stopping every widget because the
-            -- shell could not read the registry would blank the desktop over a
-            -- hiccup.
-            if #problems > 0 then notice = table.concat(problems, "; ") end
-            return
+        if failure ~= nil or type(listed) ~= "table" then
+            widgets.failure = "widgets: " .. tostring(failure or "provider did not return a list")
+            notice = widgets.failure
+            return widgets.failure
         end
 
-        local wanted, seen = {}, {}
+        -- Validate before mutating: one invalid declaration cannot erase a
+        -- previously working desktop or partially apply its replacement.
+        local wanted, seen, problems = {}, {}, {}
         for _, spec in ipairs(listed) do
             local entry: any = type(spec) == "table" and spec.entry or nil
-            if type(entry) ~= "string" or entry == "" then
-                problems[#problems + 1] = "a widget without an entry was not shown"
-            elseif not seen[entry] then
-                seen[entry] = true
+            local instance: any = type(spec) == "table" and spec.instance or nil
+            if type(entry) ~= "string" or entry == "" or type(instance) ~= "string" or instance == "" then
+                problems[#problems + 1] = "a widget requires an instance id and process entry"
+            elseif seen[instance] then
+                problems[#problems + 1] = "duplicate widget instance " .. instance
+            else
+                seen[instance] = true
                 local w = whole_cells(spec.w, WIDGET_W, WIDGET_MIN_W, WIDGET_MAX_W)
                 local h = whole_cells(spec.h, WIDGET_H, WIDGET_MIN_H, WIDGET_MAX_H)
-                if w == nil then
-                    problems[#problems + 1] = "widget " .. entry .. ": width " .. tostring(spec.w)
-                        .. " is not a whole number of cells from " .. WIDGET_MIN_W .. " to " .. WIDGET_MAX_W
-                elseif h == nil then
-                    problems[#problems + 1] = "widget " .. entry .. ": height " .. tostring(spec.h)
-                        .. " is not a whole number of cells from " .. WIDGET_MIN_H .. " to " .. WIDGET_MAX_H
+                if w == nil or h == nil then
+                    problems[#problems + 1] = "widget " .. instance .. ": size must be whole cells from 10 to 40 by 2 to 16"
+                elseif spec.config ~= nil and type(spec.config) ~= "table" then
+                    problems[#problems + 1] = "widget " .. instance .. ": config must be a table"
                 else
-                    wanted[#wanted + 1] = {entry = entry, w = w, h = h,
+                    wanted[#wanted + 1] = {instance = instance, entry = entry, w = w, h = h,
+                        config = widgets.copy(spec.config or {}),
                         order = tonumber(spec.order) or WIDGET_ORDER,
                         title = type(spec.title) == "string" and spec.title ~= "" and spec.title or nil,
                         opens = type(spec.opens) == "string" and spec.opens ~= "" and spec.opens or nil}
                 end
             end
         end
+        if #problems > 0 then
+            widgets.failure = table.concat(problems, "; ")
+            notice = widgets.failure
+            return widgets.failure
+        end
         table.sort(wanted, function(left: any, right: any)
             if left.order ~= right.order then return left.order < right.order end
-            return left.entry < right.entry
+            return left.instance < right.instance
         end)
 
         local running: any = {}
-        for _, item in ipairs(widgets.items) do running[item.entry] = item end
+        for _, item in ipairs(widgets.items) do running[item.instance] = item end
         local kept = {}
         for _, spec in ipairs(wanted) do
-            local item: any = running[spec.entry]
-            running[spec.entry] = nil
+            local item: any = running[spec.instance]
+            running[spec.instance] = nil
+            if item ~= nil and (item.entry ~= spec.entry or not widgets.equal(item.config, spec.config)) then
+                widgets.retire(item)
+                -- New transient id also isolates late SDK close/state messages.
+                item = nil
+            end
             if item == nil then
                 widgets.spawned = widgets.spawned + 1
-                item = {id = "g" .. widgets.spawned, entry = spec.entry, pid = nil,
-                    waiting = true, stopped = false, content_state = nil, state_revision = 0}
+                item = {id = "g" .. widgets.spawned, instance = spec.instance, entry = spec.entry, pid = nil,
+                    config = spec.config, waiting = true, stopped = false, content_state = nil, state_revision = 0}
             end
             local resized = item.w ~= nil and (item.w ~= spec.w or item.h ~= spec.h)
             item.w, item.h, item.order = spec.w, spec.h, spec.order
@@ -1024,15 +1081,11 @@ local function run(options: any)
             end
             kept[#kept + 1] = item
         end
-        -- Vanished from the registry: stopped and forgotten. Its exit, when it
-        -- arrives, finds nobody to mark stopped.
-        for _, gone in pairs(running) do
-            if gone.pid ~= nil then process.terminate(tostring(gone.pid)) end
-        end
+        for _, gone in pairs(running) do widgets.retire(gone) end
         widgets.items = kept
-
-        for _, problem in ipairs(problems) do log:warn("widget not shown", {reason = problem}) end
-        if #problems > 0 then notice = table.concat(problems, "; ") end
+        widgets.failure = #problems > 0 and table.concat(problems, "; ") or nil
+        if widgets.failure then notice = widgets.failure end
+        return widgets.failure
     end
 
     local quitting = false
@@ -3168,7 +3221,7 @@ local function run(options: any)
                 tray = tray_view(true),
                 -- Widgets without their trees: "not spawned", "waiting for
                 -- its first state" and "stopped" differ here and nowhere else.
-                widgets = widget_view(true),
+                widgets = widget_view(true), widget_failure = widgets.failure,
                 -- The balloon on screen with its owner and time left, and how
                 -- many wait: "not accepted", "waiting its turn" and "shown but
                 -- not drawn" differ here and nowhere else.
@@ -3277,8 +3330,9 @@ local function run(options: any)
             reload_desktop()
             -- Widgets follow the registry on the same command: new entries
             -- are spawned, vanished ones stopped, stopped ones respawned.
-            sync_widgets()
-            reply({ok = true, items = #desk.items, failure = desk.failure,
+            local widget_failure = sync_widgets()
+            reply({ok = widget_failure == nil, items = #desk.items, failure = desk.failure,
+                widget_failure = widget_failure, error = widget_failure,
                 widgets = #widgets.items}, to, topic)
             return true
         end
@@ -3503,6 +3557,7 @@ local function run(options: any)
         if balloons.timer then cases[#cases + 1] = balloons.timer:case_receive() end
         if flashes.timer then cases[#cases + 1] = flashes.timer:case_receive() end
         if notice_clock.timer then cases[#cases + 1] = notice_clock.timer:case_receive() end
+        for _, deadline in pairs(widgets.retired) do cases[#cases + 1] = deadline:case_receive() end
         local watched = {}
         for _, window in ipairs(windows) do
             -- A view window has no frames: there is nobody to publish them.
@@ -3526,6 +3581,13 @@ local function run(options: any)
         -- The clock tick is not a window event: it forwards nothing, it only
         -- updates the frame if the minute changed.
         local handled = false
+        for pid, deadline in pairs(widgets.retired) do
+            if selected.channel == deadline then
+                process.terminate(tostring(pid))
+                widgets.retired[pid] = nil
+                handled = true
+            end
+        end
         if selected.channel == ticker then
             meter.trigger = "tick"
             ticker = time.after(CLOCK_TICK)
@@ -3642,6 +3704,7 @@ local function run(options: any)
                 end
                 if event.kind == process.event.EXIT then
                     local gone = tostring(event.from)
+                    widgets.retired[gone] = nil
                     -- A widget's process: the last tree stays, the theme says
                     -- "stopped" over it, and `desktop.refresh` spawns it again.
                     local widget_stopped = false
@@ -3772,6 +3835,7 @@ local function run(options: any)
     for _, item in ipairs(widgets.items) do
         if item.pid then process.terminate(tostring(item.pid)) end
     end
+    for pid, _ in pairs(widgets.retired) do process.terminate(tostring(pid)) end
     process.registry.unregister(SERVICE_NAME)
     if terminal_state.lost or terminal_state.cancelled then
         -- Nothing to restore on a terminal that is gone — lost, or the

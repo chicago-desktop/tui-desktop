@@ -27,12 +27,10 @@ local function body_of(message: any)
     return type(body) == "table" and body or {}
 end
 
--- The widgets the shell would list from the registry: two good ones out of
--- order and one too wide, which must be refused by its entry, not clamped.
+-- Two instances out of order; invalid compositions are exercised by refresh.
 local WIDGETS = {
-    {entry = "app:widget_alpha", title = "Alpha", w = 20, h = 4, order = 20, opens = "app:menu_target"},
-    {entry = "app:widget_beta", title = "Beta", w = 12, h = 3, order = 10},
-    {entry = "app:widget_wide", title = "Too wide", w = 41, h = 4, order = 30},
+    {instance = "app:widget_alpha", entry = "app:widget_alpha", title = "Alpha", w = 20, h = 4, order = 20, opens = "app:menu_target"},
+    {instance = "app:widget_beta", entry = "app:widget_beta", title = "Beta", w = 12, h = 3, order = 10},
 }
 
 local function main(args)
@@ -133,17 +131,33 @@ local function main(args)
     -- sends `test.widgets` to this process before `desktop.refresh` — the
     -- only way to change from outside what `options.widgets` answers. The
     -- topic is listened to, so the compositor's inbox never sees it.
-    if kind == "widgets" or kind == "cells_widgets" then
+    if kind == "sized_widgets" then
+        options.cell_size = function() return 10, 20 end
+        pixel_chrome.widget_geometry = function(widget: any, width: any): any
+            return {width = math.min(widget.w, width // 3) - 2, height = widget.h - 2}
+        end
+        pixel_chrome.widget_layout = function(list: any, width: any, top: any, bottom: any): any
+            -- A test theme exposing only its first panel; status must use the
+            -- theme's answer instead of assuming every process is visible.
+            local first = list[1]
+            if not first then return {} end
+            return {{id = first.id, x = 1, y = top, w = math.min(first.w, width // 3), h = first.h}}
+        end
+    end
+
+    if kind == "widgets" or kind == "cells_widgets" or kind == "sized_widgets" then
         local changes = process.listen("test.widgets", {message = true})
         local list: any = {current = WIDGETS}
         options.widgets = function()
             while true do
                 local picked = channel.select({changes:case_receive(), time.after("50ms"):case_receive()})
                 if not picked.ok or picked.channel ~= changes then break end
-                local given: any = body_of(picked.value).widgets
+                local body: any = body_of(picked.value)
+                list.failure = body.failure
+                local given: any = body.widgets
                 list.current = type(given) == "table" and given or {}
             end
-            return list.current, nil
+            return list.current, list.failure
         end
     end
 
