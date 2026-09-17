@@ -95,6 +95,14 @@ entries:
       # For the sake of one key: the compositor's name is put into a window's context under the
       # same name the window reads it by.
       window_api: chicago.tui_desktop.desktop:window_api
+      frame_gate: chicago.tui_desktop.desktop:frame_gate
+
+  # chicago.tui_desktop.desktop:frame_gate
+  - name: frame_gate
+    kind: library.lua
+    meta:
+      comment: The gap between two frames, following what the last frame cost so that input is not queued behind frames.
+    source: file://frame_gate.lua
 
   # chicago.tui_desktop.desktop:desktop
   - name: desktop

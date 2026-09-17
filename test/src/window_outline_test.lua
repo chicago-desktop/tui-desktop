@@ -135,6 +135,28 @@ local function define_tests()
             test.eq(tostring(after.x) .. "," .. tostring(after.y), tostring(moved.x + 2) .. "," .. tostring(moved.y),
                 "Esc dropped the first outline; only the second drag moved it")
 
+            -- Motions that leave the outline where it is draw nothing. Each is
+            -- apart from the last by more than the frame gate, so without the
+            -- check every one of them would be a frame of its own.
+            mouse("press", after.x + 4, after.y)
+            mouse("motion", after.x + 5, after.y + 1)
+            local settled = frames(desk)
+            until_true(function()
+                local now = frames(desk)
+                if now ~= settled then settled = now; return false end
+                return now > 0
+            end)
+            pause("150ms")
+            local still_from = frames(desk)
+            for _ = 1, 5 do
+                mouse("motion", after.x + 5, after.y + 1)
+                pause("60ms")
+            end
+            pause("150ms")
+            test.eq(frames(desk) - still_from, 0, "motions that do not move the outline are not painted")
+            send({type = "key", key_type = "esc", key = "esc", action = "press"})
+            mouse("release", after.x + 5, after.y + 1)
+
             -- A burst of forty motions during a drag: a few frames, not forty.
             local burst_from = frames(desk)
             mouse("press", after.x + 4, after.y)

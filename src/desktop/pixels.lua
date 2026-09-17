@@ -107,6 +107,9 @@ function pixels.frame(canvas: any, painted: any)
         return images, complaints
     end
 
+    -- The cells to blank, by row: pictures side by side (a wallpaper row cut
+    -- in pieces) are blanked with one put per run, not one per picture.
+    local runs: any = {}
     for _, entry in ipairs(list) do
         local placement, reason = pixels.check(entry)
         if not placement then
@@ -119,8 +122,36 @@ function pixels.frame(canvas: any, painted: any)
             seen[placement.id] = true
             -- An overlay (a drag's outline) is transparent but for its line:
             -- the text under it must stay, so its cells are not blanked.
-            if entry.overlay ~= true then pixels.blank_under(canvas, placement) end
+            if entry.overlay ~= true then
+                local x = math.tointeger(placement.x) or 1
+                local y = math.tointeger(placement.y) or 1
+                local cols = math.tointeger(placement.cols) or 0
+                local rows = math.tointeger(placement.rows) or 0
+                if cols > 0 then
+                    for row = y, y + rows - 1 do
+                        local line: any = runs[row]
+                        if line == nil then
+                            line = {}
+                            runs[row] = line
+                        end
+                        line[#line + 1] = {x, x + cols}
+                    end
+                end
+            end
             images[#images + 1] = placement
+        end
+    end
+    for row, line in pairs(runs) do
+        table.sort(line, function(a: any, b: any): boolean return a[1] < b[1] end)
+        local from, to = line[1][1], line[1][2]
+        for index = 2, #line + 1 do
+            local run: any = line[index]
+            if run ~= nil and run[1] <= to then
+                if run[2] > to then to = run[2] end
+            else
+                pixels.blank_under(canvas, {x = from, y = row, cols = to - from, rows = 1})
+                if run ~= nil then from, to = run[1], run[2] end
+            end
         end
     end
 

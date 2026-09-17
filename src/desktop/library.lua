@@ -34,6 +34,7 @@ local apps = require("apps")
 -- "show in the menu" flag. A separate library because both the menu and the
 -- open read it, and a default computed in two places will one day diverge.
 local programs = require("programs")
+local frame_gates = require("frame_gate")
 
 -- Assembly of the pixel frame: blanks under the pictures, parsing of
 -- placements and hits. A separate library because it is arithmetic — it is
@@ -118,7 +119,8 @@ local FRAME_WINDOW = 200
 -- motion and per pty chunk backed the loop up until nothing — the clock
 -- included — was drawn (the owner's freeze, 2026-09-14: 2.4 cores and 1.8 MB/s
 -- to the terminal during a resize). Requests inside the gap are one frame.
-local FRAME_MS = 33
+-- The gap grows with what frames cost (`frame_gate`); this is its floor.
+local FRAME_MS = frame_gates.FLOOR_MS
 
 -- The delay with which hovering in the menu opens a folder or closes a
 -- submenu. As in Windows: without it the mouse, going diagonally from a
@@ -556,7 +558,7 @@ local function run(options: any)
     -- painted, whether one is owed, how many requests it merges, and the
     -- timer that paints it. A table, not locals: the loop and the closures
     -- share it (the go-lua pcall trap).
-    local frame_gate: any = {last_ms = 0, dirty = false, merged = 0, timer = nil}
+    local frame_gate: any = {last_ms = 0, dirty = false, merged = 0, timer = nil, gap_ms = FRAME_MS}
     -- Set when a frame could not be written: the terminal is gone (a remote
     -- session disconnected). The loop then shuts the desktop down.
     local terminal_state: any = {lost = nil, cancelled = false}
@@ -1404,6 +1406,9 @@ local function run(options: any)
         local report: any = {}
         for key, value in pairs(frame_cost) do report[key] = value end
         report.frames_total = meter.total
+        -- The gap the frame gate keeps now: above the floor, frames cost more
+        -- than the floor allows.
+        report.gap_ms = frame_gate.gap_ms
         local samples: any = meter.samples
         local count = #samples
         if with_samples then
@@ -1699,25 +1704,27 @@ local function run(options: any)
         }
         record_frame(frame_cost, presented_at)
         frame_gate.last_ms = presented_at // 1000000
+        frame_gate.gap_ms = frame_gates.next(frame_gate.gap_ms, frame_cost.total_ms)
         frame_gate.dirty, frame_gate.merged = false, 0
         if notify_focus then notify_focus() end
     end
 
-    -- draw() — asks for a frame. The first request after FRAME_MS of quiet is
+    -- draw() — asks for a frame. The first request after the gap of quiet is
     -- painted at once, so a single click or key shows at once; the requests
     -- inside the gap only mark the frame owed, and the frame timer (in the
     -- loop's select) paints them as ONE frame: a drag's motions, a progress
     -- bar's lines and several windows' states cost a frame per FRAME_MS.
     local function draw()
         local now = time.now():unix_nano() // 1000000
-        if frame_gate.timer == nil and now - frame_gate.last_ms >= FRAME_MS then
+        local gap = frame_gate.gap_ms
+        if frame_gate.timer == nil and now - frame_gate.last_ms >= gap then
             draw_now()
             return
         end
         frame_gate.dirty = true
         frame_gate.merged = frame_gate.merged + 1
         if frame_gate.timer == nil then
-            local wait = math.tointeger(math.max(1, FRAME_MS - (now - frame_gate.last_ms))) or 1
+            local wait = math.tointeger(math.max(1, gap - (now - frame_gate.last_ms))) or 1
             frame_gate.timer = time.after(string.format("%dms", wait))
         end
     end
@@ -2384,8 +2391,10 @@ local function run(options: any)
         if event.action == "motion" and drag.active and drag.mode == "icon" then
             local item = desktop_item(drag.id)
             if not item then drag.active = false; return end
-            item.x = clamp(event.x - drag.dx, 1, width)
-            item.y = clamp(event.y - drag.dy, desktop_top, desktop_last)
+            local x = clamp(event.x - drag.dx, 1, width)
+            local y = clamp(event.y - drag.dy, desktop_top, desktop_last)
+            if x == item.x and y == item.y then return end
+            item.x, item.y = x, y
             draw()
             return
         end
@@ -2396,12 +2405,21 @@ local function run(options: any)
             -- Only the outline follows the pointer (`drag_outline`); the
             -- window takes the rect on the release. The resize keeps G2's
             -- offset from the corner (`drag.dx`).
+            local pending
             if drag.mode == "move" then
-                drag.pending = {w = window.w, h = window.h,
+                pending = {w = window.w, h = window.h,
                     x = clamp(event.x - drag.dx, 1, math.max(1, width - window.w + 1)),
                     y = clamp(event.y - drag.dy, desktop_top, math.max(desktop_top, height - window.h))}
             else
-                drag.pending = resized_rect(window, event.x + drag.dx - window.x + 1, event.y + drag.dy - window.y + 1)
+                pending = resized_rect(window, event.x + drag.dx - window.x + 1, event.y + drag.dy - window.y + 1)
+            end
+            -- A motion that leaves the rect where it was (a clamped edge, a
+            -- pointer still in the same cell) draws nothing: under a
+            -- wallpaper a pixel frame is the most expensive thing there is.
+            local was = drag.pending
+            drag.pending = pending
+            if was and was.x == pending.x and was.y == pending.y and was.w == pending.w and was.h == pending.h then
+                return
             end
             draw()
             return

@@ -493,6 +493,19 @@ entries:
       test: wippy.test:test
     method: run
 
+  - name: frame_gate_test
+    kind: function.lua
+    meta:
+      type: test
+      comment: The gap between frames follows their cost - widened at once by a slow frame, eased back by cheap ones, kept within its floor and ceiling.
+      group: TUI Desktop
+      suite: chicago_tui_desktop
+    source: file://frame_gate_test.lua
+    imports:
+      test: wippy.test:test
+      frame_gate: chicago.tui_desktop.desktop:frame_gate
+    method: run
+
   - name: pixels_overlay_test
     kind: function.lua
     meta:
