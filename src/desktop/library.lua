@@ -278,6 +278,16 @@ local function run(options: any)
     -- reason — a picture of the wrong size looks like a drawing error, not
     -- like an unasked question.
     local PIXELS = options.pixels == true
+    -- Which graphics protocol the screen speaks, as the shell found out.
+    --
+    -- A window drawn in pixels is not the same as a window that knows WHICH
+    -- pixels the terminal understands, and one of its own can need the
+    -- second: a window showing another machine's screen has to tell that
+    -- machine what it is being drawn on, and a machine told the wrong
+    -- protocol either draws nothing or draws for a terminal that is not
+    -- there. The compositor learns it here and passes it on; it does not use
+    -- it itself.
+    local GRAPHICS = type(options.graphics) == "string" and options.graphics ~= "" and options.graphics or nil
     local cell_w, cell_h = 0, 0
     if PIXELS then
         if type(chrome.paint) ~= "function" then
@@ -1893,7 +1903,7 @@ local function run(options: any)
                     :spawn_monitored(tostring(state_ref), WINDOW_HOST, SERVICE_NAME, tostring(view_window.id),
                         type(spec.args) == "string" and spec.args ~= "" and spec.args or nil, {
                             width = w - frame_w, height = h - frame_h,
-                            cell_w = cell_w, cell_h = cell_h,
+                            cell_w = cell_w, cell_h = cell_h, protocol = GRAPHICS,
                         })
                 if not state_pid then
                     return nil, "the state provider did not start: " .. tostring(serr)
@@ -2140,7 +2150,7 @@ local function run(options: any)
         elseif window.state_pid then
             process.send(tostring(window.state_pid), "window.input", {id = window.id, event = {
                 type = "resize", width = window.w - (window.presentation and 0 or FRAME_W), height = window.h - (window.presentation and 0 or FRAME_H),
-                cell_w = cell_w, cell_h = cell_h,
+                cell_w = cell_w, cell_h = cell_h, protocol = GRAPHICS,
             }})
         end
     end
